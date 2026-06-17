@@ -1,0 +1,14 @@
+{
+  "name": "forge-auth",
+  "version": "1.0.0",
+  "dependencies": [
+    "forge-test"
+  ],
+  "configure": [
+    "drf"
+  ],
+  "env_required": [
+    "SECRET_KEY",
+    "JWT_SIGNING_KEY"
+  ]
+}

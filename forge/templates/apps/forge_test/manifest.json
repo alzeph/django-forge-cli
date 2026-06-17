@@ -1,0 +1,7 @@
+{
+  "name": "forge-test",
+  "version": "1.0.0",
+  "dependencies": [],
+  "configure": [],
+  "env_required": []
+}

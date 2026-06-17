@@ -1,0 +1,44 @@
+[project]
+name = "django-forge-cli"
+version = "1.0.1"
+description = "Django Forge est un outil de gestion de projet Django, il permet de générer des projets Django rapidement et facilement en reduisant les temps de travail."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=6.0.6",
+    "djangorestframework>=3.17.1",
+    "djangorestframework-simplejwt>=5.5.1",
+    "drf-spectacular>=0.28.0",
+    "celery>=5.5.0",
+    "faker>=40.23.0",
+    "libcst>=1.8.6",
+    "python-dotenv>=1.0.0",
+    "typer>=0.26.7",
+]
+
+[project.scripts]
+forge = "forge.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = [
+    "forge/**/*.py",
+    "forge/**/*.json",
+    "forge/**/*.yaml",
+    "forge/**/*.html",
+]
+
+[tool.pytest.ini_options]
+# Requis par pytest-django : settings Django chargé pendant les tests du repo.
+# settings_test.py = SQLite in-memory, pas de dépendances externes.
+DJANGO_SETTINGS_MODULE = "forge.others.settings_test"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0",
+    "pytest-django>=4.11.1",
+    "pillow>=11.2.1",
+]

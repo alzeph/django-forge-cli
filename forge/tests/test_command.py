@@ -561,3 +561,70 @@ class TestInitRun:
             with pytest.raises(typer.Exit) as exc_info:
                 run("mysite", InitOptions(), output_dir=tmp_path)
             assert exc_info.value.exit_code == 1
+
+
+# ===========================================================================
+# init — page d'accueil d'onboarding
+# ===========================================================================
+
+
+def _load_welcome_module():
+    """Charge project_base/welcome.py comme module isolé (fichier gabarit)."""
+    import importlib.util
+
+    from forge.commands.init import _PROJECT_BASE_DIR
+
+    spec = importlib.util.spec_from_file_location(
+        "forge_welcome_mod", _PROJECT_BASE_DIR / "welcome.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestWelcomePage:
+    def test_welcome_template_is_branded(self) -> None:
+        from forge.commands.init import _PROJECT_BASE_DIR
+
+        content = (_PROJECT_BASE_DIR / "welcome.py").read_text(encoding="utf-8")
+        assert "Django Forge" in content
+        assert "github.com/alzeph/django-forge-cli" in content
+        assert "settings.DEBUG" in content  # garde-fou DEBUG présent
+
+    def test_urls_wires_welcome_at_root(self) -> None:
+        from forge.commands.init import _PROJECT_BASE_DIR
+
+        urls = (_PROJECT_BASE_DIR / "urls.py").read_text(encoding="utf-8")
+        assert "forge_welcome" in urls
+        assert 'path("", forge_welcome' in urls
+
+    def test_overlay_copies_and_personalizes_welcome(self, tmp_path: Path) -> None:
+        from forge.commands.init import _apply_forge_settings_overlay
+
+        (tmp_path / "proj").mkdir()
+        _apply_forge_settings_overlay(tmp_path, "proj")
+
+        welcome = tmp_path / "proj" / "welcome.py"
+        assert welcome.is_file()
+        content = welcome.read_text(encoding="utf-8")
+        assert "{{project_name}}" not in content  # token substitué
+        assert "proj" in content
+
+
+class TestWelcomeView:
+    def test_returns_page_in_debug(self, settings) -> None:
+        from django.test import RequestFactory
+
+        settings.DEBUG = True
+        module = _load_welcome_module()
+        response = module.forge_welcome(RequestFactory().get("/"))
+        assert response.status_code == 200
+        assert b"Django Forge" in response.content
+
+    def test_returns_404_when_not_debug(self, settings) -> None:
+        from django.test import RequestFactory
+
+        settings.DEBUG = False
+        module = _load_welcome_module()
+        response = module.forge_welcome(RequestFactory().get("/"))
+        assert response.status_code == 404

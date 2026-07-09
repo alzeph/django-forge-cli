@@ -117,7 +117,7 @@ def _apply_forge_settings_overlay(project_dir: Path, project_name: str) -> None:
     """
     package_dir = project_dir / project_name
 
-    for filename in ("settings.py", "urls.py"):
+    for filename in ("settings.py", "urls.py", "welcome.py"):
         blueprint = _PROJECT_BASE_DIR / filename
         if not blueprint.exists():
             continue

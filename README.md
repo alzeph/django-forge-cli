@@ -104,6 +104,46 @@ forge init <project_name>
 #### Options :
 
 - `--install=forge-auth,forge-notification` : Installe et configure une liste d'applications réutilisables dès l'initialisation.
+- `--template=<blueprint>` : Applique un **blueprint de projet** — un preset qui scaffolde un projet complet et pré-configuré en une commande. Voir ci-dessous.
+
+### 1 bis. Blueprints de projet (`--template`)
+
+Un blueprint enchaîne automatiquement la création du projet, des apps, l'installation des modules et la configuration des services, dans un ordre déterministe.
+
+```bash
+forge templates                       # liste les blueprints disponibles
+forge init monshop --template saas    # scaffold complet en une commande
+```
+
+Blueprints fournis :
+
+| Blueprint | Contenu |
+|-----------|---------|
+| `api`  | Django REST Framework + PostgreSQL (SQLite en dev) + app `core`. |
+| `saas` | `forge-auth` (JWT) + DRF + PostgreSQL (SQLite en dev) + Celery + Redis + app `core`. |
+
+**Ajouter son propre blueprint** — dépose un dossier `forge/templates/blueprints/<nom>/blueprint.json` :
+
+```json
+{
+  "name": "saas",
+  "description": "SaaS prêt à coder : auth JWT, DRF, PostgreSQL, Celery + Redis.",
+  "apps": ["core"],
+  "install": ["forge-auth"],
+  "configure": [
+    { "service": "drf" },
+    { "service": "pgsql", "dev": "sqlite" },
+    { "service": "celery" },
+    { "service": "redis" }
+  ]
+}
+```
+
+- `apps` → un `forge add` par entrée ;
+- `install` → un `forge install` par module (dépendances résolues récursivement) ;
+- `configure` → un `forge configure` par service (`postgis` et `dev` optionnels).
+
+Aucun code à écrire : le fichier `blueprint.json` suffit à enregistrer un nouveau template.
 
 ### 2. Création d'application
 

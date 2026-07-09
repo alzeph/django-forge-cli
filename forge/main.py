@@ -45,20 +45,48 @@ app = typer.Typer(
 @app.command(name="init")
 def init_command(
     project_name: str = typer.Argument(..., help="Nom du projet Django à créer."),
+    template: Optional[str] = typer.Option(
+        None,
+        "--template",
+        help=(
+            "Blueprint de projet à appliquer (scaffold complet et pré-configuré). "
+            "Ex: --template saas. Liste : 'forge templates'."
+        ),
+        metavar="BLUEPRINT",
+    ),
     install: Optional[str] = typer.Option(
         None,
         "--install",
-        help="Modules Forge à installer, séparés par des virgules. Ex: forge-auth,forge-notification",
+        help="Modules Forge à installer, séparés par des virgules. Ex: forge-auth",
         metavar="MODULES",
     ),
 ) -> None:
     """Initialise un nouveau projet Django Forge."""
+    if template:
+        from forge.commands.blueprint import run as run_blueprint
+
+        run_blueprint(project_name=project_name, blueprint_name=template)
+        return
+
     from forge.commands.init import run
 
     options = InitOptions(
         install=[m.strip() for m in install.split(",")] if install else [],
     )
     run(project_name=project_name, options=options)
+
+
+# ---------------------------------------------------------------------------
+# forge templates
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="templates")
+def templates_command() -> None:
+    """Liste les blueprints de projet disponibles pour `forge init --template`."""
+    from forge.commands.blueprint import print_catalog
+
+    print_catalog()
 
 
 # ---------------------------------------------------------------------------

@@ -561,3 +561,43 @@ class TestInitRun:
             with pytest.raises(typer.Exit) as exc_info:
                 run("mysite", InitOptions(), output_dir=tmp_path)
             assert exc_info.value.exit_code == 1
+
+
+# ===========================================================================
+# install — application des settings & transmission de la racine
+# ===========================================================================
+
+
+class TestInstallSettingsAndRoot:
+    def test_apply_settings_writes_new_key(self, tmp_path: Path) -> None:
+        from forge.commands.install import _apply_settings
+
+        s = tmp_path / "settings.py"
+        s.write_text("DEBUG = True\n", encoding="utf-8")
+
+        _apply_settings({"AUTH_USER_MODEL": "forge_auth.User"}, s)
+
+        content = s.read_text()
+        assert "AUTH_USER_MODEL" in content
+        assert "forge_auth.User" in content
+
+    def test_apply_settings_does_not_overwrite_existing(self, tmp_path: Path) -> None:
+        from forge.commands.install import _apply_settings
+
+        s = tmp_path / "settings.py"
+        s.write_text('AUTH_USER_MODEL = "existing.User"\n', encoding="utf-8")
+
+        _apply_settings({"AUTH_USER_MODEL": "forge_auth.User"}, s)
+
+        content = s.read_text()
+        assert content.count("AUTH_USER_MODEL") == 1
+        assert "existing.User" in content
+
+    def test_configure_services_forwards_project_root(self, tmp_path: Path) -> None:
+        from forge.commands.install import _configure_services
+
+        with patch("forge.commands.configure.run") as configure_run:
+            _configure_services(["redis"], tmp_path)
+
+        assert configure_run.call_count == 1
+        assert configure_run.call_args.kwargs["project_root"] == tmp_path

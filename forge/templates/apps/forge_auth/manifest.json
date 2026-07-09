@@ -10,5 +10,8 @@
   "env_required": [
     "SECRET_KEY",
     "JWT_SIGNING_KEY"
-  ]
+  ],
+  "settings": {
+    "AUTH_USER_MODEL": "forge_auth.User"
+  }
 }

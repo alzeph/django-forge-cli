@@ -304,6 +304,16 @@ class TestManifest:
         m = Manifest.from_json(p)
         assert m.name == "forge-test"
 
+    def test_settings_default_empty(self) -> None:
+        m = Manifest.from_dict({"name": "forge-test"})
+        assert m.settings == {}
+
+    def test_from_dict_parses_settings(self) -> None:
+        m = Manifest.from_dict(
+            {"name": "forge-auth", "settings": {"AUTH_USER_MODEL": "forge_auth.User"}}
+        )
+        assert m.settings == {"AUTH_USER_MODEL": "forge_auth.User"}
+
 
 # ===========================================================================
 # dependency_resolver — resolve
@@ -346,6 +356,31 @@ class TestResolve:
     def test_env_keys_collected(self) -> None:
         plan = resolve("forge-notification", _make_registry())
         assert "NOTIFICATION_API_KEY" in plan.env_keys
+
+    def test_settings_collected(self) -> None:
+        registry = {
+            "forge-test": Manifest(name="forge-test"),
+            "forge-auth": Manifest(
+                name="forge-auth",
+                dependencies=["forge-test"],
+                settings={"AUTH_USER_MODEL": "forge_auth.User"},
+            ),
+        }
+        plan = resolve("forge-auth", registry)
+        assert plan.settings_to_apply == {"AUTH_USER_MODEL": "forge_auth.User"}
+
+    def test_settings_first_declarer_wins(self) -> None:
+        # forge-test (dépendance) est visité en premier → sa valeur l'emporte.
+        registry = {
+            "forge-test": Manifest(name="forge-test", settings={"K": "from-test"}),
+            "forge-auth": Manifest(
+                name="forge-auth",
+                dependencies=["forge-test"],
+                settings={"K": "from-auth"},
+            ),
+        }
+        plan = resolve("forge-auth", registry)
+        assert plan.settings_to_apply["K"] == "from-test"
 
     def test_leaf_module(self) -> None:
         plan = resolve("forge-test", _make_registry())

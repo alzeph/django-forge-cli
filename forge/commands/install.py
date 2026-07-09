@@ -82,8 +82,11 @@ def run(
     for mod in plan.order:
         _install_single_module(mod, root, settings_path)
 
+    if plan.settings_to_apply:
+        _apply_settings(plan.settings_to_apply, settings_path)
+
     if plan.services_to_configure:
-        _configure_services(plan.services_to_configure)
+        _configure_services(plan.services_to_configure, root)
 
     if plan.env_keys:
         _ensure_env_keys(plan.env_keys, root)
@@ -137,13 +140,33 @@ def _install_single_module(
         typer.echo(f"  • '{folder_name}' ajouté à INSTALLED_APPS.")
 
 
-def _configure_services(services: list[str]) -> None:
-    """Délègue la configuration de chaque service à `configure.run`."""
+def _apply_settings(settings_to_apply: dict, settings_path: Path) -> None:
+    """Injecte les settings déclarés par les manifestes dans `settings.py`.
+
+    Idempotent : ``add_simple_setting`` n'écrit pas une clé déjà présente.
+    Sert notamment à positionner ``AUTH_USER_MODEL`` quand un module fournit
+    un modèle utilisateur personnalisé (forge-auth).
+    """
+    from forge.core.config_manager import add_simple_setting
+
+    for key, value in settings_to_apply.items():
+        if add_simple_setting(settings_path, key, value):
+            typer.echo(f"  • {key} = {value!r} ajouté à settings.py.")
+
+
+def _configure_services(services: list[str], project_root: Path) -> None:
+    """Délègue la configuration de chaque service à `configure.run`.
+
+    Transmet explicitement ``project_root`` : sans lui, ``configure.run``
+    retomberait sur ``find_manage_py()`` depuis le répertoire courant, ce qui
+    échoue dès que ``forge install`` est invoqué hors du dossier du projet
+    (ex. via un blueprint exécuté depuis le dossier parent).
+    """
     from forge.commands.configure import run as configure_run
 
     for service in services:
         typer.echo(f"\n→ Configuration de '{service}'...")
-        configure_run(service=service, options=ConfigureOptions())
+        configure_run(service=service, options=ConfigureOptions(), project_root=project_root)
 
 
 def _ensure_env_keys(keys: list[str], project_root: Path) -> None:

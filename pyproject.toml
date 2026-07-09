@@ -12,6 +12,7 @@ dependencies = [
     "celery>=5.5.0",
     "faker>=40.23.0",
     "libcst>=1.8.6",
+    "pyotp>=2.9.0",
     "python-dotenv>=1.0.0",
     "typer>=0.26.7",
 ]

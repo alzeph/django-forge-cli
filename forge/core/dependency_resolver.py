@@ -55,6 +55,9 @@ class Manifest:
         Services à configurer via `forge configure` (ex : `["redis"]`).
     env_required:
         Clés d'environnement à vérifier / insérer dans `.env`.
+    settings:
+        Paires clé/valeur à injecter dans `settings.py` lors de l'installation
+        (ex : ``{"AUTH_USER_MODEL": "forge_auth.User"}``).
     """
 
     name: str
@@ -62,6 +65,7 @@ class Manifest:
     dependencies: list[str] = field(default_factory=list)
     configure: list[str] = field(default_factory=list)
     env_required: list[str] = field(default_factory=list)
+    settings: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Manifest":
@@ -71,6 +75,7 @@ class Manifest:
             dependencies=data.get("dependencies", []),
             configure=data.get("configure", []),
             env_required=data.get("env_required", []),
+            settings=data.get("settings", {}),
         )
 
     @classmethod
@@ -93,11 +98,15 @@ class InstallPlan:
         d'apparition.
     env_keys:
         Union dédupliquée de toutes les clés d'environnement requises.
+    settings_to_apply:
+        Fusion des paires clé/valeur à injecter dans `settings.py`
+        (premier module déclarant une clé l'emporte).
     """
 
     order: list[str] = field(default_factory=list)
     services_to_configure: list[str] = field(default_factory=list)
     env_keys: list[str] = field(default_factory=list)
+    settings_to_apply: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +167,7 @@ class _Resolver:
         self._order: list[str] = []
         self._services: list[str] = []
         self._env_keys: list[str] = []
+        self._settings: dict = {}
 
     def _visit(self, name: str, stack: list[str]) -> None:
         state = self._state.get(name)
@@ -193,6 +203,10 @@ class _Resolver:
             if key not in self._env_keys:
                 self._env_keys.append(key)
 
+        # Collecte des settings (premier déclarant l'emporte)
+        for setting_key, setting_value in manifest.settings.items():
+            self._settings.setdefault(setting_key, setting_value)
+
         self._state[name] = "visited"
 
     def run(self, root: str) -> InstallPlan:
@@ -201,6 +215,7 @@ class _Resolver:
             order=self._order,
             services_to_configure=self._services,
             env_keys=self._env_keys,
+            settings_to_apply=self._settings,
         )
 
 

@@ -36,6 +36,31 @@ from forge.core.config_manager import append_raw_block, replace_or_append_raw_bl
 ServiceHandler = Callable[[Path, ConfigureOptions], None]
 
 # ---------------------------------------------------------------------------
+# Résolution du moteur de base de données pour l'option --dev
+# ---------------------------------------------------------------------------
+
+# Alias de service `--dev` → chemin réel du backend Django.
+# Cas particulier : le backend SQLite de Django s'appelle « sqlite3 »
+# (le « 3 » fait partie du nom du module), et non « sqlite ».
+_DEV_ENGINE_ALIASES = {
+    "sqlite": "django.db.backends.sqlite3",
+    "sqlite3": "django.db.backends.sqlite3",
+    "mysql": "django.db.backends.mysql",
+    "postgresql": "django.db.backends.postgresql",
+    "postgres": "django.db.backends.postgresql",
+}
+
+
+def _dev_engine(dev_service: str) -> str:
+    """Retourne le chemin du backend Django pour un service de dev.
+
+    Applique les alias connus (notamment ``sqlite`` → ``sqlite3``) et retombe
+    sur ``django.db.backends.<service>`` pour tout service non répertorié.
+    """
+    return _DEV_ENGINE_ALIASES.get(dev_service, f"django.db.backends.{dev_service}")
+
+
+# ---------------------------------------------------------------------------
 # Handlers par service
 # ---------------------------------------------------------------------------
 
@@ -217,12 +242,13 @@ def _configure_pgsql(settings_path: Path, options: ConfigureOptions) -> None:
 
     if options.dev:
         dev_service = options.dev
+        dev_engine = _dev_engine(dev_service)
         block = f"""
 # forge: pgsql
 if DEBUG:
     DATABASES = {{
         "default": {{
-            "ENGINE": "django.db.backends.{dev_service}",
+            "ENGINE": "{dev_engine}",
             "NAME": BASE_DIR / "db.{dev_service}3",
         }}
     }}
@@ -262,12 +288,13 @@ def _configure_mysql(settings_path: Path, options: ConfigureOptions) -> None:
 
     if options.dev:
         dev_service = options.dev
+        dev_engine = _dev_engine(dev_service)
         block = f"""
 # forge: mysql
 if DEBUG:
     DATABASES = {{
         "default": {{
-            "ENGINE": "django.db.backends.{dev_service}",
+            "ENGINE": "{dev_engine}",
             "NAME": BASE_DIR / "db.{dev_service}3",
         }}
     }}

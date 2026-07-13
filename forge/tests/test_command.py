@@ -151,7 +151,10 @@ class TestConfigureHandlers:
         _configure_pgsql(s, ConfigureOptions(dev="sqlite"))
         content = s.read_text()
         assert "if DEBUG" in content
-        assert "sqlite" in content
+        # Le backend SQLite de Django s'appelle "sqlite3", pas "sqlite" :
+        # une config avec "django.db.backends.sqlite" lève ImproperlyConfigured.
+        assert '"django.db.backends.sqlite3"' in content
+        assert '"django.db.backends.sqlite"' not in content
         assert "postgresql" in content
 
     def test_pgsql_with_postgis(self, tmp_path: Path) -> None:
@@ -175,7 +178,9 @@ class TestConfigureHandlers:
         _configure_mysql(s, ConfigureOptions(dev="sqlite"))
         content = s.read_text()
         assert "if DEBUG" in content
-        assert "sqlite" in content
+        # Idem : le moteur DEBUG doit être "sqlite3", pas "sqlite".
+        assert '"django.db.backends.sqlite3"' in content
+        assert '"django.db.backends.sqlite"' not in content
 
     def test_channels_injects_block(self, tmp_path: Path) -> None:
         from forge.commands.configure import _configure_channels
@@ -561,3 +566,117 @@ class TestInitRun:
             with pytest.raises(typer.Exit) as exc_info:
                 run("mysite", InitOptions(), output_dir=tmp_path)
             assert exc_info.value.exit_code == 1
+
+
+# ===========================================================================
+# main() — routage du passe-plat Django
+# ===========================================================================
+
+
+class TestDevEngine:
+    """Résolution du moteur de base de données pour l'option --dev."""
+
+    def test_sqlite_alias_maps_to_sqlite3(self) -> None:
+        from forge.commands.configure import _dev_engine
+
+        assert _dev_engine("sqlite") == "django.db.backends.sqlite3"
+
+    def test_sqlite3_is_stable(self) -> None:
+        from forge.commands.configure import _dev_engine
+
+        assert _dev_engine("sqlite3") == "django.db.backends.sqlite3"
+
+    def test_unknown_service_falls_back_to_backends_path(self) -> None:
+        from forge.commands.configure import _dev_engine
+
+        assert _dev_engine("oracle") == "django.db.backends.oracle"
+
+
+class TestPassthroughRouting:
+    """main() : commandes Forge → app Typer ; commandes inconnues → manage.py."""
+
+    FORGE = {"init", "add", "install", "configure"}
+
+    def test_command_names_derived_from_app(self) -> None:
+        from forge.main import _forge_command_names
+
+        assert self.FORGE <= _forge_command_names()
+
+    def test_unknown_command_delegates_to_django(self) -> None:
+        from forge import main as m
+
+        with patch.object(m, "_forge_command_names", return_value=self.FORGE), patch.object(
+            m, "app"
+        ) as app_mock, patch(
+            "forge.core.engine.run_django_command", return_value=0
+        ) as run_dj, patch.object(
+            m.sys, "argv", ["forge", "migrate", "--noinput"]
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                m.main()
+
+        assert exc_info.value.code == 0
+        run_dj.assert_called_once_with(["migrate", "--noinput"])
+        app_mock.assert_not_called()
+
+    def test_django_returncode_is_propagated(self) -> None:
+        from forge import main as m
+
+        with patch.object(m, "_forge_command_names", return_value=self.FORGE), patch.object(
+            m, "app"
+        ), patch("forge.core.engine.run_django_command", return_value=3), patch.object(
+            m.sys, "argv", ["forge", "migrate"]
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                m.main()
+
+        assert exc_info.value.code == 3
+
+    def test_forge_command_uses_typer_app(self) -> None:
+        from forge import main as m
+
+        with patch.object(m, "_forge_command_names", return_value=self.FORGE), patch.object(
+            m, "app"
+        ) as app_mock, patch(
+            "forge.core.engine.run_django_command"
+        ) as run_dj, patch.object(
+            m.sys, "argv", ["forge", "init", "myproj"]
+        ):
+            m.main()
+
+        app_mock.assert_called_once_with()
+        run_dj.assert_not_called()
+
+    def test_no_args_uses_typer_app(self) -> None:
+        from forge import main as m
+
+        with patch.object(m, "app") as app_mock, patch.object(m.sys, "argv", ["forge"]):
+            m.main()
+
+        app_mock.assert_called_once_with()
+
+    def test_global_option_uses_typer_app(self) -> None:
+        from forge import main as m
+
+        with patch.object(m, "app") as app_mock, patch.object(
+            m.sys, "argv", ["forge", "--help"]
+        ):
+            m.main()
+
+        app_mock.assert_called_once_with()
+
+    def test_missing_manage_py_exits_1(self) -> None:
+        from forge import main as m
+
+        with patch.object(m, "_forge_command_names", return_value=self.FORGE), patch.object(
+            m, "app"
+        ), patch(
+            "forge.core.engine.run_django_command",
+            side_effect=FileNotFoundError("manage.py introuvable"),
+        ), patch.object(
+            m.sys, "argv", ["forge", "migrate"]
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                m.main()
+
+        assert exc_info.value.code == 1

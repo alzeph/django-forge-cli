@@ -15,7 +15,7 @@ de commande concerné + la signature Typer ici.
 
 from __future__ import annotations
 
-from pathlib import Path
+import sys
 from typing import Optional
 
 import typer
@@ -194,32 +194,55 @@ def configure_command(
 # ---------------------------------------------------------------------------
 
 
-@app.callback(invoke_without_command=True)
-def passthrough_callback(
-    ctx: typer.Context,
-) -> None:
+# ---------------------------------------------------------------------------
+# Mode passe-plat Django
+# ---------------------------------------------------------------------------
+
+
+def _forge_command_names() -> set[str]:
+    """Noms des commandes Forge natives, dérivés dynamiquement de l'app Typer.
+
+    Ajouter une commande via ``@app.command(name=...)`` l'inclut
+    automatiquement — aucune liste à maintenir en double.
     """
-    Intercepte toutes les commandes non reconnues par Forge et les redirige
-    vers ``manage.py`` de Django.
+    names: set[str] = set()
+    for info in app.registered_commands:
+        names.add(info.name or info.callback.__name__)
+    return names
 
-    Exemples : ``forge makemigrations``, ``forge migrate``, ``forge shell``.
+
+def main() -> None:
+    """Point d'entrée de la CLI ``forge``.
+
+    Route l'invocation avant que Typer ne prenne la main :
+
+    - commande Forge native (``init``, ``add``, ``install``, ``configure``),
+      option globale (``--help``, ``--install-completion``) ou aucun argument
+      → délégué à l'application Typer ;
+    - toute autre commande (``migrate``, ``makemigrations``, ``runserver``,
+      ``shell``, ...) → passe-plat vers le ``manage.py`` du projet Django.
+
+    Ce routage est fait ici — et non dans un ``@app.callback`` — car Typer/Click
+    résout le premier argument comme un nom de sous-commande et échoue *avant*
+    d'exécuter le callback si la commande est inconnue.
     """
-    if ctx.invoked_subcommand is not None:
-        return  # commande Forge reconnue → laisser Typer la gérer
+    argv = sys.argv[1:]
 
-    # Aucune sous-commande Forge → passe-plat vers Django
-    args = ctx.args
-    if not args:
-        return  # affiche l'aide (no_args_is_help=True)
+    # Premier jeton positionnel (on ignore les options globales type --help).
+    first_positional = next((arg for arg in argv if not arg.startswith("-")), None)
 
-    from forge.core.engine import find_manage_py, run_django_command
+    if first_positional is None or first_positional in _forge_command_names():
+        app()
+        return
+
+    # Passe-plat : commande inconnue de Forge → Django natif.
+    from forge.core.engine import run_django_command
 
     try:
-        code = run_django_command(args)
-        raise typer.Exit(code=code)
+        raise SystemExit(run_django_command(argv))
     except FileNotFoundError as exc:
         typer.echo(f"✗ {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -227,4 +250,4 @@ def passthrough_callback(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app()
+    main()

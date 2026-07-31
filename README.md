@@ -48,22 +48,23 @@ django-forge-cli/
 │   │   ├── install.py             # Logique de 'forge install'
 │   │   └── configure.py           # Logique de 'forge configure'
 │   │
-│   └── templates/                 # Blueprints et manifestes embarqués
-│   |   ├── __init__.py
-│   |   ├── project_base/          # Squelette de projet initial pour 'forge init'
-│   |   └── apps/                  # Applications réutilisables et manifestes associés
-│   |       ├── forge_auth/
-│   |       │   ├── manifest.yaml  # Configuration et dépendances de l'application
-│   |       │   └── [source_code]  # Fichiers Python standards de l'application
-│   |       └── forge_test/
-│   |           ├── manifest.yaml
-|   |           └── [source_code]
-|   |__ tests/                         # 1. LES TESTS DE LA CLI (Moteur)
-|   │   ├── __init__.py
-|   │   ├── conftest.py                # Fixtures Pytest (création de dossiers temporaires)
-|   │   ├── test_init.py               # Teste si 'forge init' crée bien le projet
-|   │   ├── test_add.py                # Teste si 'forge add' injecte bien dans settings.py
-|   │   └── test_dependency.py
+│   ├── templates/                 # Blueprints et manifestes embarqués
+│   │   ├── __init__.py
+│   │   ├── project_base/          # Squelette de projet initial pour 'forge init'
+│   │   └── apps/                  # Applications réutilisables et manifestes associés
+│   │       ├── forge_auth/
+│   │       │   ├── manifest.json  # Configuration et dépendances de l'application
+│   │       │   └── [source_code]  # Fichiers Python standards de l'application
+│   │       └── forge_test/
+│   │           ├── manifest.json
+│   │           └── [source_code]
+│   │
+│   ├── others/
+│   │   └── settings_test.py       # Settings Django minimal pour la suite pytest
+│   │
+│   └── tests/                     # Tests de la CLI (moteur)
+│       ├── test_command.py        # init, add, configure, install
+│       └── test_core.py           # config_manager, dependency_resolver, engine
 ├── pyproject.toml                 # Métadonnées du package et déclaration du script 'forge'
 └── README.md
 ```
@@ -103,7 +104,7 @@ forge init <project_name>
 
 #### Options :
 
-- `--install=forge-auth,forge-notification` : Installe et configure une liste d'applications réutilisables dès l'initialisation.
+- `--install=forge-auth` : Installe et configure une liste de modules réutilisables (séparés par des virgules) dès l'initialisation. Modules fournis en standard : `forge-auth`, `forge-test`.
 
 ### 2. Création d'application
 
@@ -207,6 +208,8 @@ app.command(name="add")(add_command)
 Chaque application présente dans `forge/templates/apps/` doit impérativement posséder un fichier `manifest.json` à sa racine. Ce fichier pilote l'arbre de dépendances récursif exécuté par le moteur de `forge install`.
 
 #### Structure du fichier `manifest.json` :
+
+> ℹ️ L'exemple ci-dessous (`forge-notification`) est **illustratif** pour montrer la structure d'un manifeste avec dépendances et configuration. Ce module n'est pas fourni en standard : les modules livrés sont `forge-auth` et `forge-test`.
 
 ```json
 {

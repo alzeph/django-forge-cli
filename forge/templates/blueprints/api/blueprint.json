@@ -1,0 +1,10 @@
+{
+  "name": "api",
+  "description": "API REST minimale : Django REST Framework + PostgreSQL (SQLite en dev), avec une app 'core'.",
+  "apps": ["core"],
+  "install": [],
+  "configure": [
+    { "service": "drf" },
+    { "service": "pgsql", "dev": "sqlite" }
+  ]
+}

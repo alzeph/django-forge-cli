@@ -1,0 +1,12 @@
+{
+  "name": "saas",
+  "description": "SaaS prêt à coder : auth JWT (forge-auth), DRF, PostgreSQL (SQLite en dev), Celery + Redis, app 'core'.",
+  "apps": ["core"],
+  "install": ["forge-auth"],
+  "configure": [
+    { "service": "drf" },
+    { "service": "pgsql", "dev": "sqlite" },
+    { "service": "celery" },
+    { "service": "redis" }
+  ]
+}

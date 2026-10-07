@@ -1,0 +1,67 @@
+name: Publish to PyPI
+
+# Déclenché par la publication d'une GitHub Release (tag vX.Y.Z).
+#
+# Utilise le Trusted Publishing PyPI (OIDC) : aucun token PyPI n'est stocké
+# dans les secrets du repo. Configuration à faire une seule fois, côté PyPI,
+# par le mainteneur du projet django-forge-cli :
+#   https://pypi.org/manage/project/django-forge-cli/settings/publishing/
+#   → Add a new publisher
+#       Owner        : <organisation/compte GitHub qui héberge ce workflow>
+#       Repository   : django-forge-cli
+#       Workflow name: publish.yml
+#       Environment  : pypi
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Vérifier que le tag de la release correspond à pyproject.toml
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(grep -m1 '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Le tag de la release ($GITHUB_REF_NAME) ne correspond pas à la version déclarée dans pyproject.toml ($PKG_VERSION)."
+            exit 1
+          fi
+
+      - name: Build package
+        run: uv build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/django-forge-cli/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

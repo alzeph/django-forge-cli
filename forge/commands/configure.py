@@ -27,7 +27,12 @@ from typing import Callable
 import typer
 
 from forge.commands._options import ConfigureOptions
-from forge.core.config_manager import append_raw_block, replace_or_append_raw_block, setting_exists
+from forge.core.config_manager import (
+    add_to_installed_apps,
+    append_raw_block,
+    replace_or_append_raw_block,
+    setting_exists,
+)
 
 # ---------------------------------------------------------------------------
 # Type des handlers de service
@@ -148,6 +153,9 @@ def _configure_drf(settings_path: Path, options: ConfigureOptions) -> None:
     fichier settings courant) pour injecter la classe d'authentification JWT
     flexible de Forge à la place des classes DRF par défaut.
     """
+    add_to_installed_apps(settings_path, "rest_framework")
+    add_to_installed_apps(settings_path, "drf_spectacular")
+
     forge_auth_active = _is_forge_auth_installed(settings_path)
 
     if forge_auth_active:

@@ -16,7 +16,6 @@ directement en Python et entièrement testable sans CLI.
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 import typer
@@ -24,6 +23,7 @@ import typer
 from forge.commands._options import AddOptions
 from forge.core.config_manager import add_to_installed_apps
 from forge.core.engine import find_manage_py, run_django_command
+from forge.core.urls_manager import find_main_urls, wire_url_include
 
 # Contenu minimal du urls.py local généré pour chaque nouvelle app
 _LOCAL_URLS_TEMPLATE = '''\
@@ -184,61 +184,19 @@ def _create_local_urls(
 
 
 def _wire_urls_in_project_router(app_name: str, project_root: Path) -> None:
-    """
-    Insère `path("<app_name>/", include(...))` dans `urlpatterns`.
-
-    Stratégie : repère la ligne `urlpatterns = [` puis cherche le `]`
-    fermant en comptant la profondeur des crochets — immunisé contre les
-    crochets dans les commentaires ou les autres listes du fichier.
-    """
-    main_urls = _find_main_urls(project_root)
-    if main_urls is None:
+    """Insère `path("<app_name>/", include(...))` dans le urls.py principal."""
+    if find_main_urls(project_root) is None:
         typer.echo("  ⚠ urls.py principal introuvable — branchement ignoré.", err=True)
         return
 
-    source = main_urls.read_text(encoding="utf-8")
-
-    snippet = f'    path("{app_name}/", include("{app_name}.urls", namespace="{app_name}")),\n'
-
-    if f'"{app_name}/"' in source:
-        return  # déjà branché
-
-    # Garantir que django.urls.include est importé
-    if "include" not in source:
-        source = source.replace(
-            "from django.urls import path",
-            "from django.urls import include, path",
-        )
-
-    # Trouver l'index du ] fermant urlpatterns en comptant la profondeur
-    marker = "urlpatterns"
-    marker_pos = source.find(marker)
-    if marker_pos == -1:
-        typer.echo("  ⚠ urlpatterns introuvable — branchement ignoré.", err=True)
-        return
-
-    # Avancer jusqu'au [ ouvrant de urlpatterns
-    open_bracket = source.find("[", marker_pos)
-    if open_bracket == -1:
-        return
-
-    depth = 0
-    close_bracket = -1
-    for i, ch in enumerate(source[open_bracket:], start=open_bracket):
-        if ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                close_bracket = i
-                break
-
-    if close_bracket == -1:
-        return
-
-    source = source[:close_bracket] + snippet + source[close_bracket:]
-    main_urls.write_text(source, encoding="utf-8")
-    typer.echo(f"  • {app_name}.urls branché dans le routeur principal.")
+    modified = wire_url_include(
+        project_root,
+        url_prefix=f"{app_name}/",
+        include_target=f"{app_name}.urls",
+        namespace=app_name,
+    )
+    if modified:
+        typer.echo(f"  • {app_name}.urls branché dans le routeur principal.")
 
 
 def _template_stem(filename: str) -> str:
@@ -310,42 +268,3 @@ def _find_settings(project_root: Path) -> Path:
     return candidates[0]
 
 
-def _root_urlconf(settings_path: Path) -> str | None:
-    """
-    Extrait la valeur de `ROOT_URLCONF` (ex: `"myproject.urls"`) depuis
-    `settings_path`. Retourne `None` si le réglage est absent ou n'est pas
-    un littéral string simple.
-    """
-    tree = ast.parse(settings_path.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        if not any(isinstance(t, ast.Name) and t.id == "ROOT_URLCONF" for t in node.targets):
-            continue
-        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-            return node.value.value
-    return None
-
-
-def _find_main_urls(project_root: Path) -> Path | None:
-    """
-    Localise le urls.py principal du projet via `ROOT_URLCONF` dans
-    `settings.py`. Retourne `None` si introuvable.
-
-    Une recherche par contenu (`rglob` + "urlpatterns" présent) confondait ce
-    fichier avec le urls.py fraîchement créé pour la nouvelle app (déjà rempli
-    de `urlpatterns: list = []`) ou avec celui d'un module installé comme
-    forge_auth — l'app finissait alors par s'inclure elle-même, provoquant une
-    boucle d'inclusion infinie au chargement des URLs.
-    """
-    try:
-        settings_path = _find_settings(project_root)
-    except FileNotFoundError:
-        return None
-
-    module_path = _root_urlconf(settings_path)
-    if module_path is None:
-        return None
-
-    urls_path = project_root / Path(*module_path.split(".")).with_suffix(".py")
-    return urls_path if urls_path.is_file() else None

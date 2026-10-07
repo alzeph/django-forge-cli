@@ -120,9 +120,13 @@ class _ListAppender(cst.CSTTransformer):
         self.modified = True
         elements = list(lst.elements)
 
-        # Whitespace "avant" le nouvel élément : saut de ligne + 4 espaces
+        # Whitespace "avant" le nouvel élément : saut de ligne + 4 espaces.
+        # `first_line` doit être un TrailingWhitespace (qui porte le Newline
+        # réel) — un SimpleWhitespace("") n'émet aucun saut de ligne, ce qui
+        # entassait tous les éléments ajoutés sur la même ligne physique dès
+        # la deuxième insertion consécutive dans le même fichier.
         newline_indent = cst.ParenthesizedWhitespace(
-            first_line=cst.SimpleWhitespace(""),
+            first_line=cst.TrailingWhitespace(newline=cst.Newline()),
             indent=True,
             last_line=cst.SimpleWhitespace("    "),
         )
@@ -145,7 +149,7 @@ class _ListAppender(cst.CSTTransformer):
         new_lbracket = lst.lbracket
         new_rbracket = lst.rbracket.with_changes(
             whitespace_before=cst.ParenthesizedWhitespace(
-                first_line=cst.SimpleWhitespace(""),
+                first_line=cst.TrailingWhitespace(newline=cst.Newline()),
                 indent=True,
                 last_line=cst.SimpleWhitespace(""),
             )

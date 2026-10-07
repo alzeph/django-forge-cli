@@ -8,21 +8,31 @@ Responsabilité
 3. Pour chaque module dans l'ordre topologique :
    a. Copier les sources dans le projet hôte.
    b. Injecter dans `INSTALLED_APPS`.
-   c. Déclencher `forge configure` pour les services requis.
-4. Vérifier / compléter les clés d'environnement dans `.env`.
+   c. Brancher son urls.py dans le routeur principal, s'il en a un.
+   d. Déclencher `forge configure` pour les services requis.
+4. Installer les paquets Python requis (`python_packages` du manifeste).
+5. Vérifier / compléter les clés d'environnement dans `.env`.
 
 Option `--dry-run` : affiche le plan sans aucune écriture disque.
 """
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import typer
 
 from forge.commands._options import ConfigureOptions, InstallOptions
-from forge.core.config_manager import add_to_installed_apps
+from forge.core.config_manager import add_simple_setting, add_to_installed_apps
 from forge.core.dependency_resolver import build_registry, resolve
+from forge.core.urls_manager import wire_url_include
+
+# Modules dont l'installation requiert des réglages supplémentaires que leur
+# manifest.json ne peut pas exprimer de façon générique (ex : un modèle User
+# personnalisé). Voir _apply_module_specific_settings.
+_AUTH_USER_MODEL_MODULES = {"forge-auth": "forge_auth.User"}
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 _APPS_DIR = _TEMPLATES_DIR / "apps"
@@ -88,6 +98,9 @@ def run(
     if plan.services_to_configure:
         _configure_services(plan.services_to_configure, root)
 
+    if plan.python_packages:
+        _install_python_packages(plan.python_packages)
+
     if plan.env_keys:
         _ensure_env_keys(plan.env_keys, root)
 
@@ -105,6 +118,8 @@ def _print_plan(plan, module_name: str) -> None:
         typer.echo(f"  {i}. {mod}")
     if plan.services_to_configure:
         typer.echo(f"  Services à configurer : {', '.join(plan.services_to_configure)}")
+    if plan.python_packages:
+        typer.echo(f"  Paquets Python à installer : {', '.join(plan.python_packages)}")
     if plan.env_keys:
         typer.echo(f"  Clés d'environnement requises : {', '.join(plan.env_keys)}")
 
@@ -115,7 +130,8 @@ def _install_single_module(
     settings_path: Path,
 ) -> None:
     """
-    Copie les sources du module et l'injecte dans INSTALLED_APPS.
+    Copie les sources du module, l'injecte dans INSTALLED_APPS, branche son
+    urls.py s'il en a un, et applique ses réglages spécifiques éventuels.
 
     Le nom du dossier source suit la convention `forge_auth` (underscores)
     pour le nom Python, `forge-auth` (tirets) pour l'identifiant manifeste.
@@ -138,6 +154,36 @@ def _install_single_module(
     modified = add_to_installed_apps(settings_path, folder_name)
     if modified:
         typer.echo(f"  • '{folder_name}' ajouté à INSTALLED_APPS.")
+
+    if (dest_dir / "urls.py").is_file():
+        wired = wire_url_include(
+            project_root,
+            url_prefix="",
+            include_target=f"{folder_name}.urls",
+            namespace=folder_name,
+        )
+        if wired:
+            typer.echo(f"  • {folder_name}.urls branché dans le routeur principal.")
+
+    _apply_module_specific_settings(module_name, settings_path)
+
+
+def _apply_module_specific_settings(module_name: str, settings_path: Path) -> None:
+    """
+    Applique les réglages qu'un module ne peut pas déclarer dans son
+    manifest.json (celui-ci ne décrit que dépendances/services/env/paquets).
+
+    Aujourd'hui, seul `forge-auth` en a besoin : son modèle `User` personnalisé
+    doit être déclaré via `AUTH_USER_MODEL` pour que Django l'utilise à la
+    place de `django.contrib.auth.models.User`.
+    """
+    auth_user_model = _AUTH_USER_MODEL_MODULES.get(module_name)
+    if auth_user_model is None:
+        return
+
+    modified = add_simple_setting(settings_path, "AUTH_USER_MODEL", auth_user_model)
+    if modified:
+        typer.echo(f"  • AUTH_USER_MODEL défini sur '{auth_user_model}'.")
 
 
 def _apply_settings(settings_to_apply: dict, settings_path: Path) -> None:
@@ -167,6 +213,39 @@ def _configure_services(services: list[str], project_root: Path) -> None:
     for service in services:
         typer.echo(f"\n→ Configuration de '{service}'...")
         configure_run(service=service, options=ConfigureOptions(), project_root=project_root)
+
+
+def _install_python_packages(packages: list[str]) -> None:
+    """
+    Installe les paquets Python requis par les modules installés dans
+    l'environnement courant (celui où tourne `forge`).
+
+    Essaie `uv pip install` en premier : c'est le gestionnaire documenté pour
+    installer django-forge-cli lui-même (`uv add django-forge-cli`), et les
+    environnements virtuels créés par uv n'embarquent PAS pip par défaut — un
+    simple `python -m pip install` y échoue avec « No module named pip ».
+    Retombe sur `pip install` pour les environnements qui en disposent.
+    """
+    typer.echo(f"\n→ Installation des paquets Python : {', '.join(packages)}...")
+
+    attempts = [
+        ["uv", "pip", "install", "--python", sys.executable, *packages],
+        [sys.executable, "-m", "pip", "install", *packages],
+    ]
+
+    for cmd in attempts:
+        try:
+            result = subprocess.run(cmd)
+        except FileNotFoundError:
+            continue
+        if result.returncode == 0:
+            return
+
+    typer.echo(
+        "  ⚠ Échec de l'installation d'un ou plusieurs paquets Python. "
+        f"Installez-les manuellement : uv pip install {' '.join(packages)}",
+        err=True,
+    )
 
 
 def _ensure_env_keys(keys: list[str], project_root: Path) -> None:

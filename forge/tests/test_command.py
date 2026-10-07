@@ -137,6 +137,20 @@ class TestConfigureHandlers:
         _configure_drf(s, ConfigureOptions())
         assert "REST_FRAMEWORK" in s.read_text()
 
+    def test_drf_registers_apps_in_installed_apps(self, tmp_path: Path) -> None:
+        """
+        Sans ça, DRF configuré via `forge configure drf` (ou `forge install
+        forge-auth`, qui en dépend) ne fonctionne pas : Django lève
+        ImproperlyConfigured tant que 'rest_framework' n'est pas listé.
+        """
+        from forge.commands.configure import _configure_drf
+
+        s = self._settings(tmp_path)
+        _configure_drf(s, ConfigureOptions())
+        content = s.read_text()
+        assert '"rest_framework"' in content
+        assert '"drf_spectacular"' in content
+
     def test_pgsql_without_dev(self, tmp_path: Path) -> None:
         from forge.commands.configure import _configure_pgsql
 
@@ -211,54 +225,11 @@ class TestAddHelpers:
         result = _find_settings(project_tree)
         assert result.name == "settings.py"
 
-    def test_find_main_urls(self, project_tree: Path) -> None:
-        from forge.commands.add import _find_main_urls
-
-        result = _find_main_urls(project_tree)
-        assert result is not None
-        assert result.name == "urls.py"
-
-    def test_find_main_urls_returns_none_when_absent(self, tmp_path: Path) -> None:
-        from forge.commands.add import _find_main_urls
-
-        result = _find_main_urls(tmp_path)
-        assert result is None
-
     def test_find_settings_raises_when_absent(self, tmp_path: Path) -> None:
         from forge.commands.add import _find_settings
 
         with pytest.raises(FileNotFoundError):
             _find_settings(tmp_path)
-
-    def test_find_main_urls_ignores_decoy_app_urls(self, project_tree: Path) -> None:
-        """
-        Régression : un urls.py d'app locale contenant déjà `urlpatterns`
-        (cas normal juste après `forge add`, avant branchement) ne doit pas
-        être confondu avec le urls.py principal du projet — sinon l'app
-        finit par s'inclure elle-même (boucle infinie).
-        """
-        from forge.commands.add import _find_main_urls
-
-        decoy = project_tree / "blog"
-        decoy.mkdir()
-        (decoy / "urls.py").write_text(
-            'app_name = "blog"\nurlpatterns: list = []\n', encoding="utf-8"
-        )
-
-        result = _find_main_urls(project_tree)
-
-        assert result == project_tree / "myproject" / "urls.py"
-
-    def test_find_main_urls_returns_none_without_root_urlconf(self, tmp_path: Path) -> None:
-        from forge.commands.add import _find_main_urls
-
-        (tmp_path / "manage.py").write_text("# manage.py")
-        pkg = tmp_path / "myproject"
-        pkg.mkdir()
-        (pkg / "settings.py").write_text("DEBUG = True\n", encoding="utf-8")
-        (pkg / "urls.py").write_text("urlpatterns = []\n", encoding="utf-8")
-
-        assert _find_main_urls(tmp_path) is None
 
 
 # ===========================================================================
@@ -704,38 +675,144 @@ class TestInstallDryRun:
 
 
 # ===========================================================================
-# init — _create_base_template
+# install — _install_python_packages
 # ===========================================================================
 
 
-class TestCreateBaseTemplate:
-    def test_creates_base_html_at_project_root(self, tmp_path: Path) -> None:
+class TestInstallPythonPackages:
+    def test_tries_uv_pip_install_first(self) -> None:
         """
-        Sans ce fichier, toute page générée par `forge add --templates`
-        (qui fait `{% extends "base.html" %}`) plante au rendu avec un
-        TemplateDoesNotExist — settings.py Forge pointe TEMPLATES[0]["DIRS"]
-        sur `BASE_DIR / "templates"`, donc le fichier doit atterrir là,
-        pas dans le package Django.
+        uv est le gestionnaire documenté pour installer django-forge-cli
+        (`uv add django-forge-cli`) et ses venvs n'embarquent pas pip par
+        défaut — `uv pip install` doit donc être tenté avant `pip install`.
         """
-        from forge.commands.init import _create_base_template
+        from forge.commands.install import _install_python_packages
 
-        _create_base_template(tmp_path)
+        with patch("forge.commands.install.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            _install_python_packages(["pyotp", "twilio"])
 
-        base_html = tmp_path / "templates" / "base.html"
-        assert base_html.exists()
-        content = base_html.read_text()
-        assert "{% block content %}" in content
+        mock_run.assert_called_once()
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd[0] == "uv"
+        assert "pip" in called_cmd and "install" in called_cmd
+        assert "pyotp" in called_cmd
+        assert "twilio" in called_cmd
 
-    def test_does_not_overwrite_existing_base_html(self, tmp_path: Path) -> None:
-        from forge.commands.init import _create_base_template
+    def test_falls_back_to_pip_when_uv_is_not_found(self) -> None:
+        from forge.commands.install import _install_python_packages
 
-        target_dir = tmp_path / "templates"
-        target_dir.mkdir()
-        (target_dir / "base.html").write_text("<!-- custom -->", encoding="utf-8")
+        with patch("forge.commands.install.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                FileNotFoundError("uv introuvable"),
+                MagicMock(returncode=0),
+            ]
+            _install_python_packages(["pyotp"])
 
-        _create_base_template(tmp_path)
+        assert mock_run.call_count == 2
+        fallback_cmd = mock_run.call_args_list[1][0][0]
+        assert fallback_cmd[1:3] == ["-m", "pip"]
+        assert "pyotp" in fallback_cmd
 
-        assert (target_dir / "base.html").read_text() == "<!-- custom -->"
+    def test_does_not_raise_when_both_attempts_fail(self) -> None:
+        from forge.commands.install import _install_python_packages
+
+        with patch("forge.commands.install.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+            _install_python_packages(["broken-package"])  # ne doit pas lever
+
+    def test_run_installs_python_packages_from_plan(self, project_tree: Path) -> None:
+        from forge.commands.install import run
+        from forge.core.dependency_resolver import Manifest
+
+        fake_registry = {
+            "forge-test": Manifest(name="forge-test", python_packages=["pyotp"]),
+        }
+
+        with (
+            patch("forge.commands.install.build_registry", return_value=fake_registry),
+            patch("forge.commands.install._detect_project_package", return_value="myproject"),
+            patch("forge.commands.install._install_single_module"),
+            patch("forge.commands.install.subprocess.run") as mock_pip,
+        ):
+            mock_pip.return_value = MagicMock(returncode=0)
+            run(
+                module_name="forge-test",
+                options=InstallOptions(),
+                project_dir=project_tree,
+                project_name="myproject",
+            )
+
+        mock_pip.assert_called_once()
+        assert "pyotp" in mock_pip.call_args[0][0]
+
+
+# ===========================================================================
+# install — _install_single_module (branchement URL + réglages spécifiques)
+# ===========================================================================
+
+
+class TestInstallSingleModule:
+    def _fake_module(self, project_tree: Path, name: str, has_urls: bool) -> None:
+        """Dépose un faux module source sous _APPS_DIR (patché sur ce test)."""
+        source_dir = project_tree / "_fake_apps" / name
+        source_dir.mkdir(parents=True)
+        (source_dir / "manifest.json").write_text("{}")
+        if has_urls:
+            (source_dir / "urls.py").write_text(
+                "from django.urls import path\n\n"
+                f"app_name = '{name}'\n"
+                "urlpatterns = []\n",
+                encoding="utf-8",
+            )
+
+    def test_wires_module_urls_when_present(self, project_tree: Path) -> None:
+        from forge.commands.install import _install_single_module
+
+        self._fake_module(project_tree, "demo_mod", has_urls=True)
+
+        with patch("forge.commands.install._APPS_DIR", project_tree / "_fake_apps"):
+            settings_path = project_tree / "myproject" / "settings.py"
+            _install_single_module("demo-mod", project_tree, settings_path)
+
+        main_urls = (project_tree / "myproject" / "urls.py").read_text()
+        assert 'include("demo_mod.urls", namespace="demo_mod")' in main_urls
+
+    def test_does_not_wire_urls_when_module_has_none(self, project_tree: Path) -> None:
+        from forge.commands.install import _install_single_module
+
+        self._fake_module(project_tree, "forge_test", has_urls=False)
+
+        with patch("forge.commands.install._APPS_DIR", project_tree / "_fake_apps"):
+            settings_path = project_tree / "myproject" / "settings.py"
+            _install_single_module("forge-test", project_tree, settings_path)
+
+        main_urls = (project_tree / "myproject" / "urls.py").read_text()
+        assert "include(" not in main_urls
+
+    def test_sets_auth_user_model_for_forge_auth(self, project_tree: Path) -> None:
+        from forge.commands.install import _install_single_module
+
+        self._fake_module(project_tree, "forge_auth", has_urls=False)
+
+        with patch("forge.commands.install._APPS_DIR", project_tree / "_fake_apps"):
+            settings_path = project_tree / "myproject" / "settings.py"
+            _install_single_module("forge-auth", project_tree, settings_path)
+
+        content = settings_path.read_text()
+        assert "AUTH_USER_MODEL" in content
+        assert "forge_auth.User" in content
+
+    def test_does_not_set_auth_user_model_for_other_modules(self, project_tree: Path) -> None:
+        from forge.commands.install import _install_single_module
+
+        self._fake_module(project_tree, "forge_test", has_urls=False)
+
+        with patch("forge.commands.install._APPS_DIR", project_tree / "_fake_apps"):
+            settings_path = project_tree / "myproject" / "settings.py"
+            _install_single_module("forge-test", project_tree, settings_path)
+
+        assert "AUTH_USER_MODEL" not in settings_path.read_text()
 
 
 # ===========================================================================

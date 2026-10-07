@@ -45,6 +45,7 @@ from forge.core.dependency_resolver import (
     resolve,
 )
 from forge.core.engine import find_manage_py, run_django_command
+from forge.core.urls_manager import find_main_urls, wire_url_include
 
 
 # ===========================================================================
@@ -104,6 +105,26 @@ class TestAddToInstalledApps:
         content = settings_file.read_text()
         assert '"app_one"' in content
         assert '"app_two"' in content
+
+    def test_multiple_additions_each_on_own_line(self, settings_file: Path) -> None:
+        """
+        Régression : chaque appel relit le fichier depuis le disque (comme le
+        fait `forge install` pour chaque module de la chaîne de dépendances).
+        Un bug de whitespace LibCST faisait que la 2e app ajoutée (et les
+        suivantes) atterrissait sur la même ligne physique que la précédente
+        au lieu d'une nouvelle ligne indentée.
+        """
+        add_to_installed_apps(settings_file, "forge_test")
+        add_to_installed_apps(settings_file, "forge_auth")
+        add_to_installed_apps(settings_file, "rest_framework")
+
+        lines = settings_file.read_text().splitlines()
+        assert '    "forge_test",' in lines
+        assert '    "forge_auth",' in lines
+        # Dernier élément ajouté : pas encore de virgule trailing (ajoutée au
+        # prochain appel), mais doit être sur sa propre ligne, pas collé au
+        # précédent.
+        assert '    "rest_framework"' in lines
 
     def test_missing_file_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
@@ -282,6 +303,7 @@ class TestManifest:
         assert m.dependencies == []
         assert m.configure == []
         assert m.env_required == []
+        assert m.python_packages == []
 
     def test_from_dict_full(self) -> None:
         data = {
@@ -290,12 +312,14 @@ class TestManifest:
             "dependencies": ["forge-auth"],
             "configure": ["redis"],
             "env_required": ["NOTIFICATION_API_KEY"],
+            "python_packages": ["twilio"],
         }
         m = Manifest.from_dict(data)
         assert m.version == "2.0.0"
         assert "forge-auth" in m.dependencies
         assert "redis" in m.configure
         assert "NOTIFICATION_API_KEY" in m.env_required
+        assert "twilio" in m.python_packages
 
     def test_from_json(self, tmp_path: Path) -> None:
         data = {"name": "forge-test", "version": "1.0.0"}
@@ -328,12 +352,14 @@ def _make_registry() -> dict[str, Manifest]:
             name="forge-auth",
             dependencies=["forge-test"],
             configure=[],
+            python_packages=["pyotp"],
         ),
         "forge-notification": Manifest(
             name="forge-notification",
             dependencies=["forge-auth"],
             configure=["redis"],
             env_required=["NOTIFICATION_API_KEY"],
+            python_packages=["twilio"],
         ),
     }
 
@@ -357,30 +383,12 @@ class TestResolve:
         plan = resolve("forge-notification", _make_registry())
         assert "NOTIFICATION_API_KEY" in plan.env_keys
 
-    def test_settings_collected(self) -> None:
-        registry = {
-            "forge-test": Manifest(name="forge-test"),
-            "forge-auth": Manifest(
-                name="forge-auth",
-                dependencies=["forge-test"],
-                settings={"AUTH_USER_MODEL": "forge_auth.User"},
-            ),
-        }
-        plan = resolve("forge-auth", registry)
-        assert plan.settings_to_apply == {"AUTH_USER_MODEL": "forge_auth.User"}
-
-    def test_settings_first_declarer_wins(self) -> None:
-        # forge-test (dépendance) est visité en premier → sa valeur l'emporte.
-        registry = {
-            "forge-test": Manifest(name="forge-test", settings={"K": "from-test"}),
-            "forge-auth": Manifest(
-                name="forge-auth",
-                dependencies=["forge-test"],
-                settings={"K": "from-auth"},
-            ),
-        }
-        plan = resolve("forge-auth", registry)
-        assert plan.settings_to_apply["K"] == "from-test"
+    def test_python_packages_collected_and_deduplicated(self) -> None:
+        plan = resolve("forge-notification", _make_registry())
+        # pyotp vient de forge-auth (dépendance), twilio de forge-notification
+        assert "pyotp" in plan.python_packages
+        assert "twilio" in plan.python_packages
+        assert plan.python_packages.count("pyotp") == 1
 
     def test_leaf_module(self) -> None:
         plan = resolve("forge-test", _make_registry())
@@ -452,3 +460,95 @@ class TestBuildRegistry:
         (tmp_path / "not_a_module").mkdir()
         registry = build_registry(tmp_path)
         assert "not-a-module" not in registry
+
+
+# ===========================================================================
+# urls_manager — find_main_urls / wire_url_include
+# ===========================================================================
+
+
+def _make_project(tmp_path: Path) -> Path:
+    """Projet Django factice minimal : manage.py + myproject/{settings,urls}.py."""
+    (tmp_path / "manage.py").write_text("# manage.py")
+    pkg = tmp_path / "myproject"
+    pkg.mkdir()
+    (pkg / "settings.py").write_text(
+        'ROOT_URLCONF = "myproject.urls"\nDEBUG = True\n', encoding="utf-8"
+    )
+    (pkg / "urls.py").write_text(
+        "from django.urls import path\n\nurlpatterns = [\n]\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+class TestFindMainUrls:
+    def test_finds_urls_via_root_urlconf(self, tmp_path: Path) -> None:
+        project = _make_project(tmp_path)
+        result = find_main_urls(project)
+        assert result == project / "myproject" / "urls.py"
+
+    def test_returns_none_when_settings_absent(self, tmp_path: Path) -> None:
+        assert find_main_urls(tmp_path) is None
+
+    def test_returns_none_without_root_urlconf(self, tmp_path: Path) -> None:
+        (tmp_path / "manage.py").write_text("# manage.py")
+        pkg = tmp_path / "myproject"
+        pkg.mkdir()
+        (pkg / "settings.py").write_text("DEBUG = True\n", encoding="utf-8")
+        (pkg / "urls.py").write_text("urlpatterns = []\n", encoding="utf-8")
+
+        assert find_main_urls(tmp_path) is None
+
+    def test_ignores_decoy_app_urls_with_urlpatterns(self, tmp_path: Path) -> None:
+        """
+        Régression : un urls.py d'app locale (ou de module installé, ex.
+        forge_auth) contient déjà "urlpatterns" — une recherche par contenu
+        le confondrait avec le urls.py principal, provoquant une
+        auto-inclusion et une boucle infinie.
+        """
+        project = _make_project(tmp_path)
+        decoy = project / "blog"
+        decoy.mkdir()
+        (decoy / "urls.py").write_text(
+            'app_name = "blog"\nurlpatterns: list = []\n', encoding="utf-8"
+        )
+
+        result = find_main_urls(project)
+
+        assert result == project / "myproject" / "urls.py"
+
+
+class TestWireUrlInclude:
+    def test_injects_include(self, tmp_path: Path) -> None:
+        project = _make_project(tmp_path)
+        modified = wire_url_include(
+            project, url_prefix="blog/", include_target="blog.urls", namespace="blog"
+        )
+        assert modified is True
+        content = (project / "myproject" / "urls.py").read_text()
+        assert 'include("blog.urls", namespace="blog")' in content
+        assert "from django.urls import include, path" in content
+
+    def test_idempotent(self, tmp_path: Path) -> None:
+        project = _make_project(tmp_path)
+        wire_url_include(project, url_prefix="blog/", include_target="blog.urls", namespace="blog")
+        second = wire_url_include(
+            project, url_prefix="blog/", include_target="blog.urls", namespace="blog"
+        )
+        assert second is False
+        content = (project / "myproject" / "urls.py").read_text()
+        assert content.count("blog.urls") == 1
+
+    def test_empty_prefix_mounts_at_root(self, tmp_path: Path) -> None:
+        """forge_auth branche ses propres URLs sans préfixe supplémentaire,
+        son urls.py définissant déjà le segment "forge_auth/"."""
+        project = _make_project(tmp_path)
+        modified = wire_url_include(
+            project, url_prefix="", include_target="forge_auth.urls", namespace="forge_auth"
+        )
+        assert modified is True
+        content = (project / "myproject" / "urls.py").read_text()
+        assert 'path("", include("forge_auth.urls", namespace="forge_auth"))' in content
+
+    def test_returns_false_when_main_urls_missing(self, tmp_path: Path) -> None:
+        assert wire_url_include(tmp_path, "x/", "x.urls", "x") is False

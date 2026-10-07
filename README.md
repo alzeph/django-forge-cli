@@ -257,7 +257,8 @@ Chaque application présente dans `forge/templates/apps/` doit impérativement p
   "version": "1.0.0",
   "dependencies": ["forge-auth"],
   "configure": ["redis"],
-  "env_required": ["NOTIFICATION_API_KEY"]
+  "env_required": ["NOTIFICATION_API_KEY"],
+  "python_packages": ["twilio"]
 }
 ```
 
@@ -266,6 +267,7 @@ Chaque application présente dans `forge/templates/apps/` doit impérativement p
 1. **Résolution des dépendances** : La CLI lit le tableau `"dependencies"`. Si une dépendance n'est pas installée, elle suspend l'installation en cours pour exécuter récursivement l'installation de la dépendance (dans l'exemple ci-dessus, `forge-auth` sera traité en premier, ce qui déploiera également `forge-test`).
 2. **Exécution des configurations** : Le tableau `"configure"` appelle automatiquement les scripts du moteur de configuration associés (ici, l'équivalent de `forge configure redis`).
 3. **Contrôle de l'environnement** : Les clés listées dans `"env_required"` sont vérifiées ou ajoutées comme structures vides dans le fichier `.env` du projet hôte pour alerter le développeur.
+4. **Installation des paquets Python** : Les paquets listés dans `"python_packages"` sont installés dans l'environnement courant (celui où tourne `forge`) via `pip install`, en plus des dépendances de `django-forge-cli` lui-même. Utile pour un module dont le code source importe un paquet tiers (ex : `pyotp` pour `forge-auth`).
 
 ```
 

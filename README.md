@@ -43,43 +43,49 @@ Pour garantir la maintenabilité et l'extensibilité du framework, le code sourc
 
 ```text
 django-forge-cli/
-├── forge/                         # Package Python principal de la CLI
-│   ├── __init__.py
-│   ├── main.py                    # Point d'entrée Typer (Routage et mode passe-plat)
-│   │
-│   ├── core/                      # Logique métier et moteurs d'automatisation
-│   │   ├── __init__.py
-│   │   ├── engine.py              # Gestionnaire d'exécution des commandes Django
-│   │   ├── dependency_resolver.py # Algorithme de résolution récursive des modules
-│   │   └── config_manager.py      # Analyseur de syntaxe AST (LibCST) pour settings.py
-│   │
-│   ├── commands/                  # Modules de définition des commandes CLI
-│   │   ├── __init__.py
-│   │   ├── init.py                # Logique de 'forge init'
-│   │   ├── add.py                 # Logique de 'forge add'
-│   │   ├── install.py             # Logique de 'forge install'
-│   │   └── configure.py           # Logique de 'forge configure'
-│   │
-│   ├── templates/                 # Blueprints et manifestes embarqués
-│   │   ├── __init__.py
-│   │   ├── project_base/          # Squelette de projet initial pour 'forge init'
-│   │   └── apps/                  # Applications réutilisables et manifestes associés
-│   │       ├── forge_auth/        # Un dossier par module ; manifest.json uniquement
-│   │       │   └── manifest.json  # Paquet PyPI, config minimale, dépendances
-│   │       ├── forge_test/
-│   │       ├── forge_log/
-│   │       ├── event_bus/
-│   │       ├── goroutine/
-│   │       └── pycatch/
-│   │
-│   ├── others/
-│   │   └── settings_test.py       # Settings Django minimal pour la suite pytest
-│   │
-│   └── tests/                     # Tests de la CLI (moteur)
-│       ├── test_command.py        # init, add, configure, install
-│       └── test_core.py           # config_manager, dependency_resolver, engine
-├── pyproject.toml                 # Métadonnées du package et déclaration du script 'forge'
-└── README.md
++-- forge/                         # Package Python principal de la CLI
+|   +-- __init__.py
+|   +-- main.py                    # Point d'entrée Typer (Routage et mode passe-plat)
+|   |
+|   +-- core/                      # Logique métier et moteurs d'automatisation
+|   |   +-- __init__.py
+|   |   +-- engine.py              # Gestionnaire d'exécution des commandes Django
+|   |   +-- dependency_resolver.py # Algorithme de résolution récursive des modules
+|   |   +-- config_manager.py      # Analyseur de syntaxe AST (LibCST) pour settings.py
+|   |   +-- environment.py         # Interpréteur du projet, installation des paquets (uv / pip)
+|   |   +-- state.py               # Lecture et écriture de forge.toml
+|   |
+|   +-- commands/                  # Modules de définition des commandes CLI
+|   |   +-- __init__.py
+|   |   +-- init.py                # Logique de 'forge init'
+|   |   +-- add.py                 # Logique de 'forge add'
+|   |   +-- install.py             # Logique de 'forge install'
+|   |   +-- configure.py           # Logique de 'forge configure'
+|   |   +-- remove.py              # Logique de 'forge remove'
+|   |   +-- upgrade.py             # Logique de 'forge upgrade'
+|   |   +-- modules.py             # Logique de 'forge list'
+|   |   +-- doctor.py              # Logique de 'forge doctor'
+|   |
+|   +-- templates/                 # Blueprints et manifestes embarqués
+|   |   +-- __init__.py
+|   |   +-- project_base/          # Squelette de projet initial pour 'forge init'
+|   |   +-- apps/                  # Applications réutilisables et manifestes associés
+|   |       +-- forge_auth/        # Un dossier par module ; manifest.json uniquement
+|   |       |   +-- manifest.json  # Paquet PyPI, config minimale, dépendances
+|   |       +-- forge_test/
+|   |       +-- forge_log/
+|   |       +-- event_bus/
+|   |       +-- goroutine/
+|   |       +-- pycatch/
+|   |
+|   +-- others/
+|   |   +-- settings_test.py       # Settings Django minimal pour la suite pytest
+|   |
+|   +-- tests/                     # Tests de la CLI (moteur)
+|       +-- test_command.py        # init, add, configure, install
+|       +-- test_core.py           # config_manager, dependency_resolver, engine
++-- pyproject.toml                 # Métadonnées du package et déclaration du script 'forge'
++-- README.md
 ```
 ````
 
@@ -118,7 +124,7 @@ forge init <project_name>
 #### Options :
 
 - `--install=forge-auth,forge-notification` : Installe et configure une liste d'applications réutilisables dès l'initialisation.
-- `--template=<blueprint>` : Applique un **blueprint de projet** — un preset qui scaffolde un projet complet et pré-configuré en une commande. Voir ci-dessous.
+- `--template=<blueprint>` : Applique un **blueprint de projet** - un preset qui scaffolde un projet complet et pré-configuré en une commande. Voir ci-dessous.
 
 ### 1 bis. Blueprints de projet (`--template`)
 
@@ -136,7 +142,7 @@ Blueprints fournis :
 | `api`  | Django REST Framework + PostgreSQL (SQLite en dev) + app `core`. |
 | `saas` | `forge-auth` (JWT) + DRF + PostgreSQL (SQLite en dev) + Celery + Redis + app `core`. |
 
-**Ajouter son propre blueprint** — dépose un dossier `forge/templates/blueprints/<nom>/blueprint.json` :
+**Ajouter son propre blueprint** - dépose un dossier `forge/templates/blueprints/<nom>/blueprint.json` :
 
 ```json
 {
@@ -153,9 +159,9 @@ Blueprints fournis :
 }
 ```
 
-- `apps` → un `forge add` par entrée ;
-- `install` → un `forge install` par module (dépendances résolues récursivement) ;
-- `configure` → un `forge configure` par service (`postgis` et `dev` optionnels).
+- `apps` -> un `forge add` par entrée ;
+- `install` -> un `forge install` par module (dépendances résolues récursivement) ;
+- `configure` -> un `forge configure` par service (`postgis` et `dev` optionnels).
 
 Aucun code à écrire : le fichier `blueprint.json` suffit à enregistrer un nouveau template.
 
@@ -172,7 +178,7 @@ forge add <app_name>
 
 - `--no-urls` : Désactive la création automatique et le branchement du fichier `urls.py`.
 - `--templates` : Crée l'arborescence standard `app_name/templates/app_name/`.
-- `--templates=index.html,detail.html` : Crée l'arborescence, génère les fichiers HTML spécifiés (séparés par des virgules) ainsi qu'une vue et une route par page dans `views.py`/`urls.py` — chaque page est accessible immédiatement (ex : `/app_name/index/`), sans code à écrire. Chaque page générée étend `templates/base.html` (créé à la racine du projet par `forge init`). Sans effet combiné à `--no-urls` (pas de routeur local à brancher).
+- `--templates=index.html,detail.html` : Crée l'arborescence, génère les fichiers HTML spécifiés (séparés par des virgules) ainsi qu'une vue et une route par page dans `views.py`/`urls.py` - chaque page est accessible immédiatement (ex : `/app_name/index/`), sans code à écrire. Chaque page générée étend `templates/base.html` (créé à la racine du projet par `forge init`). Sans effet combiné à `--no-urls` (pas de routeur local à brancher).
 
 ### 3. Installation de modules réutilisables
 
@@ -180,8 +186,32 @@ Installe un module officiel ainsi que son arbre de dépendances de manière réc
 
 ```bash
 forge install <app_name>
+forge install <app_name> --dry-run
 
 ```
+
+Les paquets sont installés dans l'**environnement du projet**, pas dans celui de la CLI :
+
+1. `uv add <paquets>` si le projet a un `pyproject.toml` (généré par `forge init`) : les dépendances sont alors enregistrées et verrouillées ;
+2. sinon `uv pip install --python <.venv du projet>`, puis `pip` en dernier recours.
+
+Chaque installation est enregistrée dans `forge.toml`, à la racine du projet.
+
+### 3 bis. Gérer les modules installés
+
+```bash
+forge list                  # modules disponibles et état dans le projet
+forge list --installed      # uniquement ceux installés
+forge upgrade               # met à jour tous les modules installés
+forge upgrade forge-log     # met à jour un seul module
+forge remove forge-log      # retire settings, URLs, paquets et entrée forge.toml
+forge remove forge-log --dry-run
+forge doctor                # contrôle forge.toml, settings.py, .env et paquets installés
+```
+
+- `forge remove` refuse de retirer un module dont dépend un autre module installé. Il ne touche ni aux migrations déjà appliquées ni au fichier `.env`.
+- `forge upgrade` réapplique aussi la configuration minimale des manifestes (idempotent).
+- `forge doctor` affiche `[OK]`, `[ATTENTION]` ou `[ERREUR]` par contrôle et sort avec le code 1 s'il y a au moins une erreur.
 
 ### 4. Configuration des services
 
@@ -193,6 +223,7 @@ forge configure <service>
 ```
 
 - Services disponibles : `redis`, `celery`, `drf`, `channels`, `pgsql`, `mysql`.
+- Les paquets PyPI du service (par exemple `djangorestframework` et `drf-spectacular` pour `drf`) sont installés dans l'environnement du projet, et le service est enregistré dans `forge.toml`.
 
 #### Options :
 
@@ -201,7 +232,7 @@ forge configure <service>
 
 ### 5. Commandes de l'écosystème Django (Mode Passe-plat)
 
-Toutes les commandes non spécifiques à Forge sont interceptées et redirigées directement vers le gestionnaire natif de Django.
+Toutes les commandes non spécifiques à Forge sont interceptées et redirigées directement vers le gestionnaire natif de Django, avec l'interpréteur du `.venv` du projet s'il existe.
 
 ```bash
 forge makemigrations
@@ -262,7 +293,7 @@ Chaque application présente dans `forge/templates/apps/` doit impérativement p
 
 #### Structure du fichier `manifest.json` :
 
-> ℹ️ L'exemple ci-dessous (`forge-notification`) est **illustratif** pour montrer la structure d'un manifeste. Ce module n'est pas fourni en standard : voir la table « Modules disponibles » pour les modules livrés.
+> Note : l'exemple ci-dessous (`forge-notification`) est **illustratif** pour montrer la structure d'un manifeste. Ce module n'est pas fourni en standard : voir la table « Modules disponibles » pour les modules livrés.
 
 ```json
 {

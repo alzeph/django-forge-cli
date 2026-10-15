@@ -7,9 +7,10 @@ Responsabilité
 2. Remplacer le `settings.py` généré par le squelette Forge.
 3. Générer `templates/base.html`, que les pages de `forge add --templates`
    étendent via `{% extends "base.html" %}`.
-4. Installer les modules passés via `--install` si présents.
+4. Générer `pyproject.toml` (dépendances du projet) et `forge.toml` (état Forge).
+5. Installer les modules passés via `--install` si présents.
 
-Ce module ne contient aucune référence à Typer — il est appelable
+Ce module ne contient aucune référence à Typer - il est appelable
 directement en Python et entièrement testable sans CLI.
 """
 
@@ -25,13 +26,14 @@ import typer
 from forge.commands._options import InitOptions
 from forge.core.config_manager import add_to_installed_apps
 from forge.core.dependency_resolver import build_registry, resolve
+from forge.core.state import State, cli_version, save_state
 
 # Chemin vers les templates embarqués dans le package
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 _PROJECT_BASE_DIR = _TEMPLATES_DIR / "project_base"
 _APPS_DIR = _TEMPLATES_DIR / "apps"
 
-# Services disponibles — utilisés uniquement pour un message d'info, pas de
+# Services disponibles - utilisés uniquement pour un message d'info, pas de
 # validation stricte ici (la validation appartient à configure.py).
 _AVAILABLE_SERVICES = {"redis", "celery", "drf", "channels", "pgsql", "mysql"}
 
@@ -61,12 +63,12 @@ def run(project_name: str, options: InitOptions, output_dir: Path | None = None)
     _validate_project_name(project_name)
     _validate_target_directory(project_dir)
 
-    typer.echo(f"→ Initialisation du projet '{project_name}'...")
+    typer.echo(f"> Initialisation du projet '{project_name}'...")
 
     _run_django_startproject(project_name, cwd)
     _apply_forge_settings_overlay(project_dir, project_name)
 
-    typer.echo(f"✓ Projet '{project_name}' créé.")
+    typer.echo(f"OK : Projet '{project_name}' créé.")
 
     if options.install:
         _install_modules(options.install, project_dir, project_name)
@@ -81,7 +83,7 @@ def _validate_project_name(name: str) -> None:
     """Lève une erreur si `name` n'est pas un identifiant Python valide."""
     if not name.isidentifier():
         typer.echo(
-            f"✗ '{name}' n'est pas un nom de projet valide "
+            f"Erreur : '{name}' n'est pas un nom de projet valide "
             "(doit être un identifiant Python : lettres, chiffres, underscores).",
             err=True,
         )
@@ -92,7 +94,7 @@ def _validate_target_directory(project_dir: Path) -> None:
     """Lève une erreur si le dossier cible existe déjà."""
     if project_dir.exists():
         typer.echo(
-            f"✗ Le répertoire '{project_dir}' existe déjà. "
+            f"Erreur : Le répertoire '{project_dir}' existe déjà. "
             "Supprimez-le ou choisissez un autre nom.",
             err=True,
         )
@@ -106,7 +108,7 @@ def _run_django_startproject(project_name: str, cwd: Path) -> None:
         cwd=cwd,
     )
     if result.returncode != 0:
-        typer.echo("✗ django-admin startproject a échoué.", err=True)
+        typer.echo("Erreur : django-admin startproject a échoué.", err=True)
         raise typer.Exit(code=result.returncode)
 
 
@@ -128,12 +130,49 @@ def _apply_forge_settings_overlay(project_dir: Path, project_name: str) -> None:
         content = content.replace("{{project_name}}", project_name)
         target = package_dir / filename
         target.write_text(content, encoding="utf-8")
-        typer.echo(f"  • {filename} Forge appliqué.")
+        typer.echo(f"  - {filename} Forge appliqué.")
 
     _create_base_template(project_dir)
 
     # Créer le .env initial si absent
     _create_initial_dotenv(project_dir)
+
+    _create_pyproject(project_dir, project_name)
+    save_state(project_dir, State(forge_version=cli_version()))
+    typer.echo("  - forge.toml généré.")
+
+
+_PYPROJECT_TEMPLATE = """\
+[project]
+name = "{distribution}"
+version = "0.1.0"
+requires-python = ">={python}"
+dependencies = [
+    "django>=6.0",
+    "python-dotenv>=1.0",
+]
+"""
+
+
+def _create_pyproject(project_dir: Path, project_name: str) -> None:
+    """
+    Génère `pyproject.toml` à la racine du projet si absent.
+
+    Il déclare les dépendances du projet : `forge install` et `forge configure`
+    y ajoutent les paquets via `uv add`, ce qui les enregistre et les verrouille.
+    """
+    target = project_dir / "pyproject.toml"
+    if target.exists():
+        return
+
+    target.write_text(
+        _PYPROJECT_TEMPLATE.format(
+            distribution=project_name.replace("_", "-"),
+            python=f"{sys.version_info[0]}.{sys.version_info[1]}",
+        ),
+        encoding="utf-8",
+    )
+    typer.echo("  - pyproject.toml généré.")
 
 
 def _create_base_template(project_dir: Path) -> None:
@@ -156,18 +195,18 @@ def _create_base_template(project_dir: Path) -> None:
         return
 
     target.write_text(blueprint.read_text(encoding="utf-8"), encoding="utf-8")
-    typer.echo("  • templates/base.html Forge appliqué.")
+    typer.echo("  - templates/base.html Forge appliqué.")
 
 
 def _register_forge_test(project_dir: Path, project_name: str) -> None:
     """
-    Installe `forge_test` dans `INSTALLED_APPS` — requis par le système
+    Installe `forge_test` dans `INSTALLED_APPS` - requis par le système
     de dépendances (toute chaîne dépend ultimement de forge-test).
     """
     settings_path = project_dir / project_name / "settings.py"
     modified = add_to_installed_apps(settings_path, "forge_test")
     if modified:
-        typer.echo("  • forge_test ajouté à INSTALLED_APPS.")
+        typer.echo("  - forge_test ajouté à INSTALLED_APPS.")
 
 
 def _create_initial_dotenv(project_dir: Path) -> None:
@@ -188,7 +227,7 @@ DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
 """
     env_file.write_text(content, encoding="utf-8")
-    typer.echo("  • .env initial généré.")
+    typer.echo("  - .env initial généré.")
 
 
 def _install_modules(
@@ -206,7 +245,7 @@ def _install_modules(
     from forge.commands._options import InstallOptions
 
     for module_name in module_names:
-        typer.echo(f"\n→ Installation de '{module_name}'...")
+        typer.echo(f"\n> Installation de '{module_name}'...")
         install_run(
             module_name=module_name,
             options=InstallOptions(),

@@ -5,7 +5,7 @@ Stratégie
 ---------
 - **config_manager** : on écrit des fichiers ``settings.py`` temporaires dans
   des répertoires tmp (``tmp_path`` de pytest) et on vérifie les mutations.
-- **engine** : on mocke ``subprocess.run`` — on ne lance pas de vrai Django.
+- **engine** : on mocke ``subprocess.run`` - on ne lance pas de vrai Django.
 - **dependency_resolver** : on travaille entièrement en mémoire avec des
   ``Manifest`` construits à la main.
 
@@ -76,7 +76,7 @@ def settings_file(tmp_path: Path) -> Path:
 
 
 # ===========================================================================
-# config_manager — add_to_installed_apps
+# config_manager - add_to_installed_apps
 # ===========================================================================
 
 
@@ -132,7 +132,7 @@ class TestAddToInstalledApps:
 
 
 # ===========================================================================
-# config_manager — add_to_list_setting
+# config_manager - add_to_list_setting
 # ===========================================================================
 
 
@@ -161,7 +161,7 @@ class TestAddToListSetting:
 
 
 # ===========================================================================
-# config_manager — add_simple_setting
+# config_manager - add_simple_setting
 # ===========================================================================
 
 
@@ -188,7 +188,7 @@ class TestAddSimpleSetting:
 
 
 # ===========================================================================
-# config_manager — append_raw_block
+# config_manager - append_raw_block
 # ===========================================================================
 
 
@@ -211,7 +211,7 @@ class TestAppendRawBlock:
         )
         assert modified is False
         # Le bloc contient CELERY_BROKER_URL 2x (clé + valeur de CELERY_RESULT_BACKEND).
-        # Un seul insert → 2 occurrences. Le guard empêche un second insert → toujours 2.
+        # Un seul insert -> 2 occurrences. Le guard empêche un second insert -> toujours 2.
         assert settings_file.read_text().count("CELERY_BROKER_URL") == 2
 
     def test_no_guard_allows_repeat(self, settings_file: Path) -> None:
@@ -221,7 +221,7 @@ class TestAppendRawBlock:
 
 
 # ===========================================================================
-# config_manager — setting_exists
+# config_manager - setting_exists
 # ===========================================================================
 
 
@@ -237,7 +237,7 @@ class TestSettingExists:
 
 
 # ===========================================================================
-# engine — find_manage_py
+# engine - find_manage_py
 # ===========================================================================
 
 
@@ -262,7 +262,7 @@ class TestFindManagePy:
 
 
 # ===========================================================================
-# engine — run_django_command
+# engine - run_django_command
 # ===========================================================================
 
 
@@ -292,7 +292,7 @@ class TestRunDjangoCommand:
 
 
 # ===========================================================================
-# dependency_resolver — Manifest
+# dependency_resolver - Manifest
 # ===========================================================================
 
 
@@ -387,7 +387,7 @@ class TestManifestPypiFields:
 
 
 # ===========================================================================
-# dependency_resolver — resolve
+# dependency_resolver - resolve
 # ===========================================================================
 
 
@@ -470,7 +470,7 @@ class TestResolve:
 
 
 # ===========================================================================
-# dependency_resolver — load_manifest / build_registry
+# dependency_resolver - load_manifest / build_registry
 # ===========================================================================
 
 
@@ -510,7 +510,7 @@ class TestBuildRegistry:
 
 
 # ===========================================================================
-# urls_manager — find_main_urls / wire_url_include
+# urls_manager - find_main_urls / wire_url_include
 # ===========================================================================
 
 
@@ -549,7 +549,7 @@ class TestFindMainUrls:
     def test_ignores_decoy_app_urls_with_urlpatterns(self, tmp_path: Path) -> None:
         """
         Régression : un urls.py d'app locale (ou de module installé, ex.
-        forge_auth) contient déjà "urlpatterns" — une recherche par contenu
+        forge_auth) contient déjà "urlpatterns" - une recherche par contenu
         le confondrait avec le urls.py principal, provoquant une
         auto-inclusion et une boucle infinie.
         """

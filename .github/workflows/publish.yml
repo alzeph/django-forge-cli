@@ -6,7 +6,7 @@ name: Publish to PyPI
 # dans les secrets du repo. Configuration à faire une seule fois, côté PyPI,
 # par le mainteneur du projet django-forge-cli :
 #   https://pypi.org/manage/project/django-forge-cli/settings/publishing/
-#   → Add a new publisher
+#   -> Add a new publisher
 #       Owner        : <organisation/compte GitHub qui héberge ce workflow>
 #       Repository   : django-forge-cli
 #       Workflow name: publish.yml

@@ -20,6 +20,8 @@ Public API
     add_to_installed_apps(settings_path, app_label)
     add_to_list_setting(settings_path, setting_name, value)
     add_simple_setting(settings_path, key, value)
+    remove_from_list_setting(settings_path, setting_name, value)
+    remove_setting(settings_path, key)
     append_raw_block(settings_path, block)
     setting_exists(settings_path, key)
 """
@@ -94,7 +96,7 @@ class _ListAppender(cst.CSTTransformer):
 
     Gère les deux formes :
         INSTALLED_APPS = [...]          (Assign)
-        INSTALLED_APPS += [...]         (AugAssign — moins courant)
+        INSTALLED_APPS += [...]         (AugAssign - moins courant)
 
     L'attribut `modified` indique si une modification a effectivement eu lieu.
     """
@@ -122,7 +124,7 @@ class _ListAppender(cst.CSTTransformer):
 
         # Whitespace "avant" le nouvel élément : saut de ligne + 4 espaces.
         # `first_line` doit être un TrailingWhitespace (qui porte le Newline
-        # réel) — un SimpleWhitespace("") n'émet aucun saut de ligne, ce qui
+        # réel) - un SimpleWhitespace("") n'émet aucun saut de ligne, ce qui
         # entassait tous les éléments ajoutés sur la même ligne physique dès
         # la deuxième insertion consécutive dans le même fichier.
         newline_indent = cst.ParenthesizedWhitespace(
@@ -189,6 +191,70 @@ class _ListAppender(cst.CSTTransformer):
             new_list = self._append_to_list(updated_node.value)
             return updated_node.with_changes(value=new_list)
         return updated_node
+
+
+class _ListRemover(cst.CSTTransformer):
+    """Retire `value` d'une liste Python assignée à `setting_name`."""
+
+    def __init__(self, setting_name: str, value: str) -> None:
+        super().__init__()
+        self.setting_name = setting_name
+        self.value = value
+        self.modified = False
+
+    def _filtered(self, lst: cst.List) -> cst.List:
+        elements = list(lst.elements)
+        kept = [el for el in elements if _string_value(el.value) != self.value]
+        if len(kept) == len(elements):
+            return lst
+
+        self.modified = True
+        if kept and kept[-1] is not elements[-1]:
+            # Le dernier élément a été retiré : la virgule de l'avant-dernier
+            # portait l'espacement vers l'ancien élément, on la normalise.
+            kept[-1] = kept[-1].with_changes(comma=cst.MaybeSentinel.DEFAULT)
+        if not kept:
+            return lst.with_changes(
+                elements=[],
+                lbracket=lst.lbracket.with_changes(whitespace_after=cst.SimpleWhitespace("")),
+                rbracket=lst.rbracket.with_changes(whitespace_before=cst.SimpleWhitespace("")),
+            )
+        return lst.with_changes(elements=kept)
+
+    def leave_Assign(
+        self, original_node: cst.Assign, updated_node: cst.Assign
+    ) -> cst.BaseStatement:
+        for target in updated_node.targets:
+            if (
+                isinstance(target.target, cst.Name)
+                and target.target.value == self.setting_name
+                and isinstance(updated_node.value, cst.List)
+            ):
+                return updated_node.with_changes(value=self._filtered(updated_node.value))
+        return updated_node
+
+    def leave_AugAssign(
+        self, original_node: cst.AugAssign, updated_node: cst.AugAssign
+    ) -> cst.BaseStatement:
+        if (
+            isinstance(updated_node.target, cst.Name)
+            and updated_node.target.value == self.setting_name
+            and isinstance(updated_node.value, cst.List)
+        ):
+            return updated_node.with_changes(value=self._filtered(updated_node.value))
+        return updated_node
+
+
+def _assigns_name(statement: cst.CSTNode, key: str) -> bool:
+    """`True` si `statement` est une ligne `KEY = ...` de premier niveau."""
+    if not isinstance(statement, cst.SimpleStatementLine):
+        return False
+    for small in statement.body:
+        if isinstance(small, cst.Assign):
+            for target in small.targets:
+                if isinstance(target.target, cst.Name) and target.target.value == key:
+                    return True
+    return False
 
 
 class _SimpleSettingInserter(cst.CSTTransformer):
@@ -333,6 +399,46 @@ def add_simple_setting(
         _save(path, new_module)
 
     return transformer.modified
+
+
+def remove_from_list_setting(
+    settings_path: Union[str, Path],
+    setting_name: str,
+    value: str,
+) -> bool:
+    """
+    Retire `value` de la liste `setting_name`.
+
+    Retourne `True` si le fichier a été modifié, `False` si la valeur ou la
+    liste est absente (opération idempotente).
+    """
+    path = Path(settings_path)
+    _, module = _load(path)
+
+    transformer = _ListRemover(setting_name, value)
+    new_module = module.visit(transformer)
+
+    if transformer.modified:
+        _save(path, new_module)
+
+    return transformer.modified
+
+
+def remove_setting(settings_path: Union[str, Path], key: str) -> bool:
+    """
+    Supprime l'affectation de premier niveau `key = ...`.
+
+    Retourne `True` si le fichier a été modifié.
+    """
+    path = Path(settings_path)
+    _, module = _load(path)
+
+    body = [statement for statement in module.body if not _assigns_name(statement, key)]
+    if len(body) == len(module.body):
+        return False
+
+    _save(path, module.with_changes(body=body))
+    return True
 
 
 def append_raw_block(

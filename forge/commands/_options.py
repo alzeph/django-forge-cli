@@ -93,3 +93,33 @@ class ConfigureOptions:
 
     postgis: bool = False
     dev: str | None = None
+
+@dataclass(frozen=True)
+class RemoveOptions:
+    """
+    Options de ``forge remove <module>``.
+
+    Attributes
+    ----------
+    dry_run:
+        Affiche ce qui serait retiré sans rien modifier. Correspond à ``--dry-run``.
+    yes:
+        Ne demande pas de confirmation. Correspond à ``--yes``.
+    """
+
+    dry_run: bool = False
+    yes: bool = False
+
+
+@dataclass(frozen=True)
+class ListOptions:
+    """
+    Options de ``forge list``.
+
+    Attributes
+    ----------
+    installed:
+        N'affiche que les modules installés dans le projet. Correspond à ``--installed``.
+    """
+
+    installed: bool = False

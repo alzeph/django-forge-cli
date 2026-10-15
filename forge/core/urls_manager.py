@@ -55,7 +55,7 @@ def find_main_urls(project_root: Path) -> Path | None:
 
     Une recherche par contenu (rglob + "urlpatterns" présent) confondrait ce
     fichier avec le urls.py d'une app locale fraîchement créée ou celui d'un
-    module installé comme forge_auth — l'app/le module finirait par s'inclure
+    module installé comme forge_auth - l'app/le module finirait par s'inclure
     lui-même, provoquant une boucle d'inclusion infinie au chargement des URLs.
     """
     match catch(FileNotFoundError)(_find_settings)(project_root):
@@ -88,7 +88,7 @@ def wire_url_include(
     dans les `urlpatterns` du urls.py principal du projet.
 
     Stratégie : repère la ligne `urlpatterns = [` puis cherche le `]`
-    fermant en comptant la profondeur des crochets — immunisé contre les
+    fermant en comptant la profondeur des crochets - immunisé contre les
     crochets dans les commentaires ou les autres listes du fichier.
 
     Idempotent : si `include_target` figure déjà dans le fichier, ne fait
@@ -139,4 +139,25 @@ def wire_url_include(
 
     source = source[:close_bracket] + snippet + source[close_bracket:]
     main_urls.write_text(source, encoding="utf-8")
+    return True
+
+
+def unwire_url_include(project_root: Path, include_target: str) -> bool:
+    """
+    Retire du urls.py principal la ligne qui inclut `include_target`.
+
+    Retourne `True` si une ligne a été supprimée, `False` si le urls.py
+    principal est introuvable ou ne contient pas ce branchement.
+    """
+    main_urls = find_main_urls(project_root)
+    if main_urls is None:
+        return False
+
+    marker = f'include("{include_target}"'
+    lines = main_urls.read_text(encoding="utf-8").splitlines(keepends=True)
+    kept = [line for line in lines if marker not in line]
+    if len(kept) == len(lines):
+        return False
+
+    main_urls.write_text("".join(kept), encoding="utf-8")
     return True

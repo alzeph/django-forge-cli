@@ -18,8 +18,9 @@ Public API
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
+
+from forge.core.environment import target_python
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +100,7 @@ def run_django_command(
     manage_py = find_manage_py(project_root)
     cwd = manage_py.parent
 
-    cmd = [sys.executable, str(manage_py), *args]
+    cmd = [str(target_python(cwd)), str(manage_py), *args]
 
     result = subprocess.run(cmd, cwd=cwd)
     return result.returncode

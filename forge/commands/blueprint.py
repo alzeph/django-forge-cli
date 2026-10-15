@@ -1,7 +1,7 @@
 """
 forge/commands/blueprint.py
 ===========================
-Système de *blueprints* de projet — presets qui scaffoldent un projet Django
+Système de *blueprints* de projet - presets qui scaffoldent un projet Django
 complet et pré-configuré en une seule commande.
 
 Un blueprint est un dossier ``forge/templates/blueprints/<nom>/`` contenant un
@@ -12,7 +12,7 @@ fichier ``blueprint.json`` qui décrit, de façon déclarative :
 - ``configure`` : services à configurer (``forge configure``).
 
 L'orchestration **réutilise** intégralement la logique métier des commandes
-existantes : un blueprint ne fait qu'enchaîner ``init → add → install →
+existantes : un blueprint ne fait qu'enchaîner ``init -> add -> install ->
 configure`` dans un ordre déterministe. Ajouter un blueprint = déposer un
 dossier avec un ``blueprint.json``, sans toucher au code.
 
@@ -28,6 +28,7 @@ from pathlib import Path
 
 import typer
 
+from forge.core.state import load_state, save_state
 from forge.commands._options import (
     AddOptions,
     ConfigureOptions,
@@ -106,7 +107,7 @@ def load_blueprint(name: str) -> Blueprint:
     if not manifest.is_file():
         available = ", ".join(b.name for b in list_blueprints()) or "(aucun)"
         typer.echo(
-            f"✗ Blueprint '{name}' introuvable.\n"
+            f"Erreur : Blueprint '{name}' introuvable.\n"
             f"  Blueprints disponibles : {available}",
             err=True,
         )
@@ -126,7 +127,7 @@ def print_catalog() -> None:
     typer.echo("Blueprints de projet disponibles :\n")
     width = max(len(b.name) for b in blueprints)
     for bp in blueprints:
-        typer.echo(f"  • {bp.name:<{width}}  {bp.description}")
+        typer.echo(f"  - {bp.name:<{width}}  {bp.description}")
     typer.echo("\nUtilisation : forge init <nom_projet> --template <blueprint>")
 
 
@@ -159,7 +160,7 @@ def run(
     output_dir = output_dir or Path.cwd()
     project_root = output_dir / project_name
 
-    typer.echo(f"→ Projet '{project_name}' — blueprint '{blueprint.name}'")
+    typer.echo(f"> Projet '{project_name}' - blueprint '{blueprint.name}'")
 
     init_cmd.run(project_name=project_name, options=InitOptions(), output_dir=output_dir)
 
@@ -181,4 +182,8 @@ def run(
             project_root=project_root,
         )
 
-    typer.echo(f"✓ Projet '{project_name}' prêt (blueprint '{blueprint.name}').")
+    state = load_state(project_root)
+    state.blueprint = blueprint.name
+    save_state(project_root, state)
+
+    typer.echo(f"OK : projet '{project_name}' prêt (blueprint '{blueprint.name}').")

@@ -11,7 +11,7 @@ Stratégie par commande
                   est déjà couverte dans test_core.py.
 - **init**      : les appels subprocess sont mockés ; on vérifie l'orchestration.
 
-Aucun test ne lance un vrai ``django-admin`` — subprocess.run est mocké partout
+Aucun test ne lance un vrai ``django-admin`` - subprocess.run est mocké partout
 où il interviendrait, ce qui rend la suite rapide et sans dépendance
 d'environnement.
 """
@@ -71,7 +71,7 @@ def project_tree(tmp_path: Path) -> Path:
 
 
 # ===========================================================================
-# configure — _find_settings
+# configure - _find_settings
 # ===========================================================================
 
 
@@ -91,7 +91,7 @@ class TestConfigureFindSettings:
 
 
 # ===========================================================================
-# configure — handlers de service (logique d'injection)
+# configure - handlers de service (logique d'injection)
 # ===========================================================================
 
 
@@ -214,7 +214,7 @@ class TestConfigureHandlers:
 
 
 # ===========================================================================
-# add — helpers filesystem
+# add - helpers filesystem
 # ===========================================================================
 
 
@@ -233,7 +233,7 @@ class TestAddHelpers:
 
 
 # ===========================================================================
-# add — _wire_urls_in_project_router
+# add - _wire_urls_in_project_router
 # ===========================================================================
 
 
@@ -272,7 +272,7 @@ class TestWireUrls:
 
 
 # ===========================================================================
-# add — _create_local_urls
+# add - _create_local_urls
 # ===========================================================================
 
 
@@ -333,7 +333,7 @@ class TestCreateLocalUrls:
 
 
 # ===========================================================================
-# add — _create_view_functions
+# add - _create_view_functions
 # ===========================================================================
 
 
@@ -386,7 +386,7 @@ class TestCreateViewFunctions:
 
 
 # ===========================================================================
-# add — _create_template_tree
+# add - _create_template_tree
 # ===========================================================================
 
 
@@ -429,7 +429,7 @@ class TestCreateTemplateTree:
 
 
 # ===========================================================================
-# add — run() orchestration (subprocess mocké)
+# add - run() orchestration (subprocess mocké)
 # ===========================================================================
 
 
@@ -503,7 +503,7 @@ class TestAddRun:
     def test_run_with_templates_generates_view_and_route(self, project_tree: Path) -> None:
         """
         Point 25 : une page de --templates doit être accessible immédiatement,
-        sans code manuel — vue + route générées automatiquement.
+        sans code manuel - vue + route générées automatiquement.
         """
         from forge.commands.add import run
 
@@ -569,7 +569,7 @@ class TestAddRun:
 
 
 # ===========================================================================
-# install — _detect_project_package
+# install - _detect_project_package
 # ===========================================================================
 
 
@@ -588,7 +588,7 @@ class TestDetectProjectPackage:
 
 
 # ===========================================================================
-# install — _ensure_env_keys
+# install - _ensure_env_keys
 # ===========================================================================
 
 
@@ -642,7 +642,7 @@ class TestEnsureEnvKeys:
 
 
 # ===========================================================================
-# install — run() avec dry_run
+# install - run() avec dry_run
 # ===========================================================================
 
 
@@ -675,7 +675,7 @@ class TestInstallDryRun:
 
 
 # ===========================================================================
-# install — _install_python_packages
+# install - _install_python_packages
 # ===========================================================================
 
 
@@ -684,11 +684,11 @@ class TestInstallPythonPackages:
         """
         uv est le gestionnaire documenté pour installer django-forge-cli
         (`uv add django-forge-cli`) et ses venvs n'embarquent pas pip par
-        défaut — `uv pip install` doit donc être tenté avant `pip install`.
+        défaut - `uv pip install` doit donc être tenté avant `pip install`.
         """
         from forge.commands.install import _install_python_packages
 
-        with patch("forge.commands.install.subprocess.run") as mock_run:
+        with patch("forge.core.environment.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             _install_python_packages(["pyotp", "twilio"])
 
@@ -702,7 +702,7 @@ class TestInstallPythonPackages:
     def test_falls_back_to_pip_when_uv_is_not_found(self) -> None:
         from forge.commands.install import _install_python_packages
 
-        with patch("forge.commands.install.subprocess.run") as mock_run:
+        with patch("forge.core.environment.subprocess.run") as mock_run:
             mock_run.side_effect = [
                 FileNotFoundError("uv introuvable"),
                 MagicMock(returncode=0),
@@ -717,7 +717,7 @@ class TestInstallPythonPackages:
     def test_does_not_raise_when_both_attempts_fail(self) -> None:
         from forge.commands.install import _install_python_packages
 
-        with patch("forge.commands.install.subprocess.run") as mock_run:
+        with patch("forge.core.environment.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1)
             _install_python_packages(["broken-package"])  # ne doit pas lever
 
@@ -733,7 +733,7 @@ class TestInstallPythonPackages:
             patch("forge.commands.install.build_registry", return_value=fake_registry),
             patch("forge.commands.install._detect_project_package", return_value="myproject"),
             patch("forge.commands.install._install_single_module"),
-            patch("forge.commands.install.subprocess.run") as mock_pip,
+            patch("forge.core.environment.subprocess.run") as mock_pip,
         ):
             mock_pip.return_value = MagicMock(returncode=0)
             run(
@@ -748,7 +748,7 @@ class TestInstallPythonPackages:
 
 
 # ===========================================================================
-# install — _install_single_module (branchement URL + réglages spécifiques)
+# install - _install_single_module (branchement URL + réglages spécifiques)
 # ===========================================================================
 
 
@@ -805,7 +805,7 @@ class TestInstallSingleModule:
 
 
 # ===========================================================================
-# install — modules distribués sur PyPI (manifestes réels)
+# install - modules distribués sur PyPI (manifestes réels)
 # ===========================================================================
 
 
@@ -982,7 +982,7 @@ class TestPythonVersionCheck:
 
 
 # ===========================================================================
-# init — run() orchestration (subprocess mocké)
+# init - run() orchestration (subprocess mocké)
 # ===========================================================================
 
 
@@ -1031,7 +1031,7 @@ class TestInitRun:
 
 
 # ===========================================================================
-# install — application des settings & transmission de la racine
+# install - application des settings & transmission de la racine
 # ===========================================================================
 
 

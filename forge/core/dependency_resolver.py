@@ -7,7 +7,7 @@ installés depuis PyPI (`python_packages`) ; le manifeste dit ensuite ce qu'il
 faut régler dans le projet pour qu'ils fonctionnent (config minimale) :
 
 - `dependencies`    : liste d'autres modules Forge requis.
-- `configure`       : liste de services à configurer (redis, celery, …).
+- `configure`       : liste de services à configurer (redis, celery, ...).
 - `env_required`    : clés d'environnement à garantir dans `.env`.
 - `python_packages` : spécifications PyPI à installer (ex : `django-forge-auth>=0.2.1`).
 - `installed_apps`  : apps à ajouter à `INSTALLED_APPS`.
@@ -159,7 +159,7 @@ class InstallPlan:
 
 
 def _parse_version(version: str) -> tuple[int, int] | None:
-    """`"3.13"` → `(3, 13)` ; chaîne vide → `None`."""
+    """`"3.13"` -> `(3, 13)` ; chaîne vide -> `None`."""
     if not version:
         return None
     major, _, minor = version.partition(".")
@@ -176,7 +176,7 @@ def load_manifest(module_name: str, apps_dir: Path) -> Manifest:
     Charge le manifeste du module `module_name` depuis `apps_dir`.
 
     Le nom du dossier est le nom du module avec les tirets remplacés par des
-    underscores (convention Python) : `"forge-auth"` → `apps_dir/forge_auth/`.
+    underscores (convention Python) : `"forge-auth"` -> `apps_dir/forge_auth/`.
 
     Parameters
     ----------
@@ -213,9 +213,9 @@ class _Resolver:
     Implémente le tri topologique par DFS (Depth-First Search).
 
     États d'un nœud :
-        `"visiting"`  → le nœud est sur la pile d'appels courante.
-        `"visited"`   → le nœud et toutes ses dépendances ont été traités.
-        absent          → non encore rencontré.
+        `"visiting"`  -> le nœud est sur la pile d'appels courante.
+        `"visited"`   -> le nœud et toutes ses dépendances ont été traités.
+        absent          -> non encore rencontré.
     """
 
     def __init__(self, registry: dict[str, Manifest]) -> None:
@@ -238,7 +238,7 @@ class _Resolver:
             return  # déjà traité, rien à faire
 
         if state == "visiting":
-            cycle = " → ".join(stack + [name])
+            cycle = " -> ".join(stack + [name])
             raise ValueError(f"Cycle de dépendances détecté : {cycle}")
 
         if name not in self._registry:

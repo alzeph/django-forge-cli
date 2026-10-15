@@ -10,7 +10,7 @@ Responsabilité
    demandés (option `--templates`), ainsi que la vue et la route de chaque
    page pour qu'elle soit accessible immédiatement (sauf `--no-urls`).
 
-Ce module ne contient aucune référence à Typer — il est appelable
+Ce module ne contient aucune référence à Typer - il est appelable
 directement en Python et entièrement testable sans CLI.
 """
 
@@ -99,7 +99,7 @@ def run(app_name: str, options: AddOptions, project_root: Path | None = None) ->
     _validate_app_name(app_name)
     _validate_app_does_not_exist(app_name, root)
 
-    typer.echo(f"→ Création de l'application '{app_name}'...")
+    typer.echo(f"> Création de l'application '{app_name}'...")
 
     _run_startapp(app_name, root)
     _register_in_installed_apps(app_name, root)
@@ -121,7 +121,7 @@ def run(app_name: str, options: AddOptions, project_root: Path | None = None) ->
         if view_names:
             _create_view_functions(app_name, root, view_names)
 
-    typer.echo(f"✓ Application '{app_name}' créée et configurée.")
+    typer.echo(f"OK : Application '{app_name}' créée et configurée.")
 
 
 # ---------------------------------------------------------------------------
@@ -131,20 +131,20 @@ def run(app_name: str, options: AddOptions, project_root: Path | None = None) ->
 
 def _validate_app_name(name: str) -> None:
     if not name.isidentifier():
-        typer.echo(f"✗ '{name}' n'est pas un nom d'application valide.", err=True)
+        typer.echo(f"Erreur : '{name}' n'est pas un nom d'application valide.", err=True)
         raise typer.Exit(code=1)
 
 
 def _validate_app_does_not_exist(app_name: str, project_root: Path) -> None:
     if (project_root / app_name).exists():
-        typer.echo(f"✗ Le dossier '{app_name}' existe déjà.", err=True)
+        typer.echo(f"Erreur : Le dossier '{app_name}' existe déjà.", err=True)
         raise typer.Exit(code=1)
 
 
 def _run_startapp(app_name: str, project_root: Path) -> None:
     code = run_django_command(["startapp", app_name], project_root=project_root)
     if code != 0:
-        typer.echo("✗ django startapp a échoué.", err=True)
+        typer.echo("Erreur : django startapp a échoué.", err=True)
         raise typer.Exit(code=code)
 
 
@@ -153,7 +153,7 @@ def _register_in_installed_apps(app_name: str, project_root: Path) -> None:
     settings_path = _find_settings(project_root)
     modified = add_to_installed_apps(settings_path, app_name)
     if modified:
-        typer.echo(f"  • '{app_name}' ajouté à INSTALLED_APPS.")
+        typer.echo(f"  - '{app_name}' ajouté à INSTALLED_APPS.")
 
 
 def _create_local_urls(
@@ -180,13 +180,13 @@ def _create_local_urls(
         content = _LOCAL_URLS_TEMPLATE.format(app_name=app_name)
 
     urls_path.write_text(content, encoding="utf-8")
-    typer.echo(f"  • {app_name}/urls.py créé.")
+    typer.echo(f"  - {app_name}/urls.py créé.")
 
 
 def _wire_urls_in_project_router(app_name: str, project_root: Path) -> None:
     """Insère `path("<app_name>/", include(...))` dans le urls.py principal."""
     if find_main_urls(project_root) is None:
-        typer.echo("  ⚠ urls.py principal introuvable — branchement ignoré.", err=True)
+        typer.echo("  ! urls.py principal introuvable - branchement ignoré.", err=True)
         return
 
     modified = wire_url_include(
@@ -196,7 +196,7 @@ def _wire_urls_in_project_router(app_name: str, project_root: Path) -> None:
         namespace=app_name,
     )
     if modified:
-        typer.echo(f"  • {app_name}.urls branché dans le routeur principal.")
+        typer.echo(f"  - {app_name}.urls branché dans le routeur principal.")
 
 
 def _template_stem(filename: str) -> str:
@@ -216,7 +216,7 @@ def _create_template_tree(
     """
     template_dir = project_root / app_name / "templates" / app_name
     template_dir.mkdir(parents=True, exist_ok=True)
-    typer.echo(f"  • Arborescence templates/{app_name}/ créée.")
+    typer.echo(f"  - Arborescence templates/{app_name}/ créée.")
 
     for raw_name in html_files:
         stem = _template_stem(raw_name)
@@ -226,7 +226,7 @@ def _create_template_tree(
             _HTML_TEMPLATE.format(page_title=page_title),
             encoding="utf-8",
         )
-        typer.echo(f"  • templates/{app_name}/{filename} généré.")
+        typer.echo(f"  - templates/{app_name}/{filename} généré.")
 
 
 def _create_view_functions(app_name: str, project_root: Path, view_names: list[str]) -> None:
@@ -246,7 +246,7 @@ def _create_view_functions(app_name: str, project_root: Path, view_names: list[s
         )
 
     views_path.write_text(content, encoding="utf-8")
-    typer.echo(f"  • Vues générées dans {app_name}/views.py.")
+    typer.echo(f"  - Vues générées dans {app_name}/views.py.")
 
 
 # ---------------------------------------------------------------------------

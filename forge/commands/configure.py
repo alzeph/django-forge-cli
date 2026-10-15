@@ -12,7 +12,7 @@ enregistrée dans le registre `_SERVICE_REGISTRY`.
 Pour ajouter un nouveau service :
     1. Écrire `_configure_<service>(settings_path, options)` ci-dessous.
     2. L'enregistrer dans `_SERVICE_REGISTRY`.
-    C'est tout — aucune autre modification n'est requise.
+    C'est tout - aucune autre modification n'est requise.
 
 Option `--dev` : génère une configuration conditionnelle `if DEBUG`
 pour segmenter automatiquement les environnements dev/prod.
@@ -27,6 +27,8 @@ from typing import Callable
 import typer
 
 from forge.commands._options import ConfigureOptions
+from forge.core import environment
+from forge.core.state import cli_version, load_state, save_state
 from forge.core.config_manager import (
     add_to_installed_apps,
     append_raw_block,
@@ -44,7 +46,7 @@ ServiceHandler = Callable[[Path, ConfigureOptions], None]
 # Résolution du moteur de base de données pour l'option --dev
 # ---------------------------------------------------------------------------
 
-# Alias de service `--dev` → chemin réel du backend Django.
+# Alias de service `--dev` -> chemin réel du backend Django.
 # Cas particulier : le backend SQLite de Django s'appelle « sqlite3 »
 # (le « 3 » fait partie du nom du module), et non « sqlite ».
 _DEV_ENGINE_ALIASES = {
@@ -59,7 +61,7 @@ _DEV_ENGINE_ALIASES = {
 def _dev_engine(dev_service: str) -> str:
     """Retourne le chemin du backend Django pour un service de dev.
 
-    Applique les alias connus (notamment ``sqlite`` → ``sqlite3``) et retombe
+    Applique les alias connus (notamment ``sqlite`` -> ``sqlite3``) et retombe
     sur ``django.db.backends.<service>`` pour tout service non répertorié.
     """
     return _DEV_ENGINE_ALIASES.get(dev_service, f"django.db.backends.{dev_service}")
@@ -76,7 +78,7 @@ def _configure_redis(settings_path: Path, options: ConfigureOptions) -> None:
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 """
     append_raw_block(settings_path, block, guard_comment="# forge: redis")
-    typer.echo("  • Redis configuré.")
+    typer.echo("  - Redis configuré.")
 
 
 def _configure_celery(settings_path: Path, options: ConfigureOptions) -> None:
@@ -91,7 +93,7 @@ CELERY_TIMEZONE = TIME_ZONE
 """
     append_raw_block(settings_path, block, guard_comment="# forge: celery")
     _generate_celery_app_file(settings_path)
-    typer.echo("  • Celery configuré (settings.py + celery.py).")
+    typer.echo("  - Celery configuré (settings.py + celery.py).")
 
 
 def _generate_celery_app_file(settings_path: Path) -> None:
@@ -109,7 +111,7 @@ def _generate_celery_app_file(settings_path: Path) -> None:
     celery_path = settings_path.parent / "celery.py"
 
     if celery_path.exists():
-        typer.echo("  • celery.py déjà présent — ignoré.")
+        typer.echo("  - celery.py déjà présent - ignoré.")
         return
 
     content = f'''\
@@ -142,7 +144,7 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 '''
     celery_path.write_text(content, encoding="utf-8")
-    typer.echo(f"  • {project_package}/celery.py généré.")
+    typer.echo(f"  - {project_package}/celery.py généré.")
 
 
 def _configure_drf(settings_path: Path, options: ConfigureOptions) -> None:
@@ -205,17 +207,17 @@ SPECTACULAR_SETTINGS = {{
     append_raw_block(settings_path, block, guard_comment="# forge: drf")
 
     if forge_auth_active:
-        typer.echo("  • DRF configuré avec forge_auth.JWTAuthenticationFlexible.")
+        typer.echo("  - DRF configuré avec forge_auth.JWTAuthenticationFlexible.")
     else:
-        typer.echo("  • DRF configuré (auth DRF par défaut — installez forge-auth pour JWT).")
-    typer.echo("  • drf-spectacular configuré.")
+        typer.echo("  - DRF configuré (auth DRF par défaut - installez forge-auth pour JWT).")
+    typer.echo("  - drf-spectacular configuré.")
 
 
 def _is_forge_auth_installed(settings_path: Path) -> bool:
     """
     Retourne True si `forge_auth` est présent dans le fichier settings.
 
-    Utilise une recherche textuelle simple — suffisant car on cherche une
+    Utilise une recherche textuelle simple - suffisant car on cherche une
     chaîne litérale dans INSTALLED_APPS, sans avoir besoin d'importer Django.
     """
     return "forge_auth" in settings_path.read_text(encoding="utf-8")
@@ -235,7 +237,7 @@ CHANNEL_LAYERS = {
 }
 """
     append_raw_block(settings_path, block, guard_comment="# forge: channels")
-    typer.echo("  • Django Channels configuré.")
+    typer.echo("  - Django Channels configuré.")
 
 
 def _configure_pgsql(settings_path: Path, options: ConfigureOptions) -> None:
@@ -288,7 +290,7 @@ DATABASES = {{
 """
     replace_or_append_raw_block(settings_path, block, guard_comment="# forge: pgsql")
     label = "PostgreSQL + PostGIS" if options.postgis else "PostgreSQL"
-    typer.echo(f"  • {label} configuré.")
+    typer.echo(f"  - {label} configuré.")
 
 
 def _configure_mysql(settings_path: Path, options: ConfigureOptions) -> None:
@@ -333,7 +335,7 @@ DATABASES = {
 }
 """
     replace_or_append_raw_block(settings_path, block, guard_comment="# forge: mysql")
-    typer.echo("  • MySQL configuré.")
+    typer.echo("  - MySQL configuré.")
 
 
 def _remove_sqlite_databases(settings_path: Path) -> None:
@@ -381,6 +383,17 @@ _SERVICE_REGISTRY: dict[str, ServiceHandler] = {
 
 AVAILABLE_SERVICES = sorted(_SERVICE_REGISTRY)
 
+# Paquets PyPI nécessaires à chaque service, installés dans l'environnement du
+# projet par `forge configure`.
+SERVICE_PACKAGES: dict[str, list[str]] = {
+    "redis": ["redis>=5.0"],
+    "celery": ["celery>=5.5.0"],
+    "drf": ["djangorestframework>=3.17.1", "drf-spectacular>=0.28.0"],
+    "channels": ["channels>=4.2", "channels-redis>=4.2"],
+    "pgsql": ["psycopg[binary]>=3.2"],
+    "mysql": ["mysqlclient>=2.2"],
+}
+
 
 # ---------------------------------------------------------------------------
 # Point d'entrée de la commande
@@ -411,7 +424,7 @@ def run(
 
     if service not in _SERVICE_REGISTRY:
         typer.echo(
-            f"✗ Service '{service}' inconnu.\n"
+            f"Erreur : Service '{service}' inconnu.\n"
             f"  Services disponibles : {', '.join(AVAILABLE_SERVICES)}",
             err=True,
         )
@@ -419,9 +432,17 @@ def run(
 
     settings_path = _find_settings(root)
 
-    typer.echo(f"→ Configuration de '{service}'...")
+    typer.echo(f"> Configuration de '{service}'...")
     _SERVICE_REGISTRY[service](settings_path, options)
-    typer.echo(f"✓ '{service}' configuré avec succès.")
+
+    environment.install_packages(SERVICE_PACKAGES[service], root)
+
+    state = load_state(root)
+    state.forge_version = cli_version()
+    state.record_service(service)
+    save_state(root, state)
+
+    typer.echo(f"OK : '{service}' configuré avec succès.")
 
 
 # ---------------------------------------------------------------------------

@@ -265,7 +265,7 @@ class TestResolverAggregation:
         from forge.core.dependency_resolver import resolve_safe
 
         result = resolve_safe("a", {"a": Manifest(name="a", dependencies=["a"])})
-        assert result.is_err() and "a → a" in str(result.error)
+        assert result.is_err() and "a -> a" in str(result.error)
 
     def test_resolve_safe_ok_value_is_the_plan(self) -> None:
         from forge.core.dependency_resolver import resolve_safe
@@ -571,8 +571,10 @@ class TestConfigureDetails:
     def test_run_known_service(self, project: Path) -> None:
         from forge.commands.configure import run
 
-        run("redis", ConfigureOptions(), project_root=project)
+        with patch("forge.core.environment.install_packages") as install:
+            run("redis", ConfigureOptions(), project_root=project)
         assert "# forge: redis" in (project / "p" / "settings.py").read_text()
+        install.assert_called_once_with(["redis>=5.0"], project)
 
     def test_find_settings_ignores_test_and_migrations_dirs(self, tmp_path: Path) -> None:
         from forge.commands.configure import _find_settings
@@ -630,46 +632,46 @@ class TestInstallHelpers:
     def test_run_installer_returns_exit_code(self) -> None:
         from forge.commands.install import _run_installer
 
-        with patch("forge.commands.install.subprocess.run", return_value=MagicMock(returncode=3)):
+        with patch("forge.core.environment.subprocess.run", return_value=MagicMock(returncode=3)):
             assert _run_installer(["x"]).value == 3
 
     def test_run_installer_captures_missing_executable(self) -> None:
         from forge.commands.install import _run_installer
 
-        with patch("forge.commands.install.subprocess.run", side_effect=FileNotFoundError("uv")):
+        with patch("forge.core.environment.subprocess.run", side_effect=FileNotFoundError("uv")):
             assert _run_installer(["uv"]).is_err()
 
     def test_run_installer_lets_other_errors_propagate(self) -> None:
         from forge.commands.install import _run_installer
 
-        with patch("forge.commands.install.subprocess.run", side_effect=PermissionError):
+        with patch("forge.core.environment.subprocess.run", side_effect=PermissionError):
             with pytest.raises(PermissionError):
                 _run_installer(["uv"])
 
     def test_install_packages_returns_true_on_success(self) -> None:
         from forge.commands.install import _install_python_packages
 
-        with patch("forge.commands.install.subprocess.run", return_value=MagicMock(returncode=0)):
+        with patch("forge.core.environment.subprocess.run", return_value=MagicMock(returncode=0)):
             assert _install_python_packages(["a>=1"]) is True
 
     def test_install_packages_returns_false_when_all_fail(self) -> None:
         from forge.commands.install import _install_python_packages
 
-        with patch("forge.commands.install.subprocess.run", return_value=MagicMock(returncode=1)):
+        with patch("forge.core.environment.subprocess.run", return_value=MagicMock(returncode=1)):
             assert _install_python_packages(["a>=1"]) is False
 
     def test_install_packages_falls_back_when_uv_fails(self) -> None:
         from forge.commands.install import _install_python_packages
 
         results = [MagicMock(returncode=2), MagicMock(returncode=0)]
-        with patch("forge.commands.install.subprocess.run", side_effect=results) as run:
+        with patch("forge.core.environment.subprocess.run", side_effect=results) as run:
             assert _install_python_packages(["a>=1"]) is True
         assert run.call_count == 2
 
     def test_install_packages_targets_current_interpreter(self) -> None:
         from forge.commands.install import _install_python_packages
 
-        with patch("forge.commands.install.subprocess.run", return_value=MagicMock(returncode=0)) as run:
+        with patch("forge.core.environment.subprocess.run", return_value=MagicMock(returncode=0)) as run:
             _install_python_packages(["a>=1", "b>=2"])
         cmd = run.call_args[0][0]
         assert cmd[:3] == ["uv", "pip", "install"]
@@ -679,7 +681,7 @@ class TestInstallHelpers:
     def test_install_packages_manual_hint_quotes_specs(self, capsys) -> None:
         from forge.commands.install import _install_python_packages
 
-        with patch("forge.commands.install.subprocess.run", return_value=MagicMock(returncode=1)):
+        with patch("forge.core.environment.subprocess.run", return_value=MagicMock(returncode=1)):
             _install_python_packages(["a>=1"])
         assert 'uv pip install "a>=1"' in capsys.readouterr().err
 
@@ -801,7 +803,7 @@ class TestApplyManifestConfigDetails:
         with patch("forge.commands.install._install_python_packages") as pip:
             run("forge-log", InstallOptions(), project_dir=project, project_name="p")
         text = (project / "p" / "settings.py").read_text()
-        pip.assert_called_once_with(["django-forge-log>=1.0.0rc3"])
+        pip.assert_called_once_with(["django-forge-log>=1.0.0rc3"], project)
         assert '"forge_log"' in text
         assert not (project / "forge_log").exists()
 
@@ -956,14 +958,17 @@ class TestMain:
     def test_forge_command_names(self) -> None:
         from forge.main import _forge_command_names
 
-        assert _forge_command_names() == {"init", "templates", "add", "install", "configure"}
+        assert _forge_command_names() == {
+            "init", "templates", "add", "install", "configure",
+            "remove", "upgrade", "list", "doctor",
+        }
 
     def test_help_lists_commands(self) -> None:
         from forge.main import app
 
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        for command in ("init", "templates", "add", "install", "configure"):
+        for command in ("init", "templates", "add", "install", "configure", "remove", "upgrade", "list", "doctor"):
             assert command in result.output
 
     def test_install_passes_dry_run(self) -> None:

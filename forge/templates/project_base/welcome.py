@@ -7,8 +7,8 @@ qui confirme que le projet tourne, invite à soutenir le projet sur GitHub, et
 liste les prochaines étapes pour terminer son application.
 
 Comportement :
-- ``DEBUG = True``  → affiche la page d'onboarding.
-- ``DEBUG = False`` → renvoie 404 : à vous de brancher votre vraie page
+- ``DEBUG = True``  -> affiche la page d'onboarding.
+- ``DEBUG = False`` -> renvoie 404 : à vous de brancher votre vraie page
   d'accueil sur ``/`` (cette page est un outil de développement, pas une page
   publique).
 """
@@ -23,7 +23,7 @@ _PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{project_name}} — Django Forge</title>
+<title>{{project_name}} - Django Forge</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -81,33 +81,33 @@ _PAGE = """<!doctype html>
 </head>
 <body>
 <div class="wrap">
-  <span class="badge">🔥 Django Forge</span>
-  <h1><span class="fire">🔥</span> Projet <em>{{project_name}}</em> opérationnel</h1>
-  <p class="sub"><span class="ok">✓ Le serveur tourne.</span> Votre projet Django Forge est prêt à être développé.</p>
+  <span class="badge">Django Forge</span>
+  <h1>Projet <em>{{project_name}}</em> opérationnel</h1>
+  <p class="sub"><span class="ok">OK : Le serveur tourne.</span> Votre projet Django Forge est prêt à être développé.</p>
 
-  <a class="star" href="{{GITHUB_URL}}" target="_blank" rel="noopener">⭐ Mettez une étoile sur GitHub</a>
+  <a class="star" href="{{GITHUB_URL}}" target="_blank" rel="noopener">Mettez une étoile sur GitHub</a>
   <p class="star-note">
-    Django Forge vous fait gagner du temps ? Un simple ⭐ aide énormément le projet.<br>
+    Django Forge vous fait gagner du temps ? Un simple  aide énormément le projet.<br>
     Dépôt d'origine : <a href="{{GITHUB_URL}}" target="_blank" rel="noopener">{{GITHUB_URL}}</a>
   </p>
 
-  <h2>Et maintenant ? — pour terminer votre projet</h2>
+  <h2>Et maintenant ? - pour terminer votre projet</h2>
   <ol class="steps">
     <li><b>Créez un compte administrateur</b>
       <p>Exécutez <code>forge createsuperuser</code>, puis connectez-vous sur <code>/admin/</code>.</p></li>
     <li><b>Créez vos applications métier</b>
-      <p><code>forge add blog</code> — l'app est créée, ajoutée à <code>INSTALLED_APPS</code> et ses URLs sont branchées automatiquement.</p></li>
+      <p><code>forge add blog</code> - l'app est créée, ajoutée à <code>INSTALLED_APPS</code> et ses URLs sont branchées automatiquement.</p></li>
     <li><b>Définissez vos modèles, puis migrez</b>
       <p>Éditez <code>votre_app/models.py</code>, puis <code>forge makemigrations</code> et <code>forge migrate</code>.</p></li>
     <li><b>Ajoutez des services au besoin</b>
-      <p><code>forge configure drf</code> (API REST), <code>redis</code>, <code>celery</code>, <code>channels</code>, <code>pgsql</code>…</p></li>
+      <p><code>forge configure drf</code> (API REST), <code>redis</code>, <code>celery</code>, <code>channels</code>, <code>pgsql</code>...</p></li>
     <li><b>Installez des modules prêts à l'emploi</b>
       <p><code>forge install forge-auth</code> pour l'authentification JWT + OTP (dépendances résolues automatiquement).</p></li>
     <li><b>Remplacez cette page d'accueil</b>
       <p>Branchez votre vraie vue sur <code>/</code> dans <code>{{project_name}}/urls.py</code>. Cette page ne s'affiche qu'en développement (<code>DEBUG=True</code>).</p></li>
   </ol>
 
-  <p class="tip">💡 Astuce : <code>forge</code> relaie toutes les commandes Django natives — <code>forge shell</code>, <code>forge test</code>, <code>forge dbshell</code>… fonctionnent tels quels.</p>
+  <p class="tip"> Astuce : <code>forge</code> relaie toutes les commandes Django natives - <code>forge shell</code>, <code>forge test</code>, <code>forge dbshell</code>... fonctionnent tels quels.</p>
 
   <div class="foot">
     Généré par <a href="{{GITHUB_URL}}" target="_blank" rel="noopener">Django Forge</a>.

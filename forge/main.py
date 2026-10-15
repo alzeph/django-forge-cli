@@ -7,9 +7,9 @@ Rôle strict : déclarer les commandes Typer et translater les paramètres
 CLI vers les dataclasses Options, puis déléguer à la logique métier.
 
 Ce fichier ne contient aucune logique métier.
-Pour modifier le comportement d'une commande → éditer son fichier dans
+Pour modifier le comportement d'une commande -> éditer son fichier dans
 ``forge/commands/``.
-Pour ajouter une option → éditer ``forge/commands/_options.py`` + le fichier
+Pour ajouter une option -> éditer ``forge/commands/_options.py`` + le fichier
 de commande concerné + la signature Typer ici.
 """
 
@@ -26,12 +26,14 @@ from forge.commands._options import (
     ConfigureOptions,
     InitOptions,
     InstallOptions,
+    ListOptions,
+    RemoveOptions,
 )
 from forge.commands.configure import AVAILABLE_SERVICES
 
 app = typer.Typer(
     name="forge",
-    help="Django Forge — méta-framework CLI pour Django.",
+    help="Django Forge - méta-framework CLI pour Django.",
     no_args_is_help=True,
     rich_markup_mode="markdown",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
@@ -158,6 +160,62 @@ def install_command(
 
 
 # ---------------------------------------------------------------------------
+# forge remove / upgrade / list / doctor
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="remove")
+def remove_command(
+    module_name: str = typer.Argument(..., help="Module Forge à retirer. Ex: forge-log"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Affiche ce qui serait retiré sans modifier le projet.",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Ne demande pas de confirmation."),
+) -> None:
+    """Retire un module Forge installé (settings, URLs, paquets, forge.toml)."""
+    from forge.commands.remove import run
+
+    run(module_name=module_name, options=RemoveOptions(dry_run=dry_run, yes=yes))
+
+
+@app.command(name="upgrade")
+def upgrade_command(
+    module_name: Optional[str] = typer.Argument(
+        None,
+        help="Module à mettre à jour. Sans argument : tous les modules installés.",
+    ),
+) -> None:
+    """Met à jour les modules installés et réapplique leur configuration."""
+    from forge.commands.upgrade import run
+
+    run(module_name=module_name)
+
+
+@app.command(name="list")
+def list_command(
+    installed: bool = typer.Option(
+        False,
+        "--installed",
+        help="N'affiche que les modules installés dans le projet.",
+    ),
+) -> None:
+    """Liste les modules Forge disponibles et ceux installés dans le projet."""
+    from forge.commands.modules import run
+
+    run(options=ListOptions(installed=installed))
+
+
+@app.command(name="doctor")
+def doctor_command() -> None:
+    """Contrôle la cohérence entre forge.toml, settings.py, .env et l'environnement."""
+    from forge.commands.doctor import run
+
+    run()
+
+
+# ---------------------------------------------------------------------------
 # forge configure
 # ---------------------------------------------------------------------------
 
@@ -204,7 +262,7 @@ def _forge_command_names() -> set[str]:
     """Noms des commandes Forge natives, dérivés dynamiquement de l'app Typer.
 
     Ajouter une commande via ``@app.command(name=...)`` l'inclut
-    automatiquement — aucune liste à maintenir en double.
+    automatiquement - aucune liste à maintenir en double.
     """
     names: set[str] = set()
     for info in app.registered_commands:
@@ -219,11 +277,11 @@ def main() -> None:
 
     - commande Forge native (``init``, ``add``, ``install``, ``configure``),
       option globale (``--help``, ``--install-completion``) ou aucun argument
-      → délégué à l'application Typer ;
+      -> délégué à l'application Typer ;
     - toute autre commande (``migrate``, ``makemigrations``, ``runserver``,
-      ``shell``, ...) → passe-plat vers le ``manage.py`` du projet Django.
+      ``shell``, ...) -> passe-plat vers le ``manage.py`` du projet Django.
 
-    Ce routage est fait ici — et non dans un ``@app.callback`` — car Typer/Click
+    Ce routage est fait ici - et non dans un ``@app.callback`` - car Typer/Click
     résout le premier argument comme un nom de sous-commande et échoue *avant*
     d'exécuter le callback si la commande est inconnue.
     """
@@ -236,14 +294,14 @@ def main() -> None:
         app()
         return
 
-    # Passe-plat : commande inconnue de Forge → Django natif.
+    # Passe-plat : commande inconnue de Forge -> Django natif.
     from forge.core.engine import run_django_command
 
     match catch(FileNotFoundError)(run_django_command)(argv):
         case Ok(code):
             raise SystemExit(code)
         case Err(error):
-            typer.echo(f"✗ {error}", err=True)
+            typer.echo(f"Erreur : {error}", err=True)
             raise SystemExit(1)
 
 

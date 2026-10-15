@@ -12,20 +12,21 @@ Responsabilité
 5. Appliquer la configuration minimale déclarée par les manifestes
    (`installed_apps`, `middleware`, `settings`, `urls`).
 6. Déclencher `forge configure` pour les services requis.
-7. Installer depuis PyPI les paquets requis (`python_packages`).
+7. Installer depuis PyPI les paquets requis (`python_packages`), dans
+   l'environnement du projet (voir `forge.core.environment`).
 8. Vérifier / compléter les clés d'environnement dans `.env`.
+9. Enregistrer les modules installés dans `forge.toml`.
 
 Option `--dry-run` : affiche le plan sans aucune écriture disque.
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
 import typer
-from pycatch import Err, Ok, catch
+from pycatch import Err, Ok, Result
 
 from forge.commands._options import ConfigureOptions, InstallOptions
 from forge.core.config_manager import (
@@ -33,7 +34,9 @@ from forge.core.config_manager import (
     add_to_installed_apps,
     add_to_list_setting,
 )
+from forge.core import environment
 from forge.core.dependency_resolver import build_registry, resolve_safe
+from forge.core.state import cli_version, load_state, save_state
 from forge.core.urls_manager import wire_url_include
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
@@ -75,7 +78,7 @@ def run(
 
     if module_name not in registry:
         typer.echo(
-            f"✗ Module '{module_name}' introuvable dans le registre Forge.\n"
+            f"Erreur : Module '{module_name}' introuvable dans le registre Forge.\n"
             f"  Modules disponibles : {', '.join(sorted(registry))}",
             err=True,
         )
@@ -86,21 +89,23 @@ def run(
             pass
         case Err(error):
             message = error.args[0] if isinstance(error, KeyError) else error
-            typer.echo(f"✗ {message}", err=True)
+            typer.echo(f"Erreur : {message}", err=True)
             raise typer.Exit(code=1)
 
     _print_plan(plan, module_name)
 
-    python_error = _check_python_version(plan.min_python)
+    python_error = _check_python_version(
+        plan.min_python, environment.current_python_version(root)
+    )
 
     if options.dry_run:
         if python_error:
-            typer.echo(f"\n⚠ {python_error}", err=True)
+            typer.echo(f"\n! {python_error}", err=True)
         typer.echo("\n[dry-run] Aucune modification effectuée.")
         return
 
     if python_error:
-        typer.echo(f"✗ {python_error}", err=True)
+        typer.echo(f"Erreur : {python_error}", err=True)
         raise typer.Exit(code=1)
 
     settings_path = root / pkg_name / "settings.py"
@@ -114,15 +119,17 @@ def run(
         _configure_services(plan.services_to_configure, root)
 
     if plan.python_packages:
-        _install_python_packages(plan.python_packages)
+        _install_python_packages(plan.python_packages, root)
 
     if plan.env_keys:
         _ensure_env_keys(plan.env_keys, root)
 
-    if plan.installed_apps:
-        typer.echo("  → Appliquez les migrations : forge migrate")
+    _record_modules(plan.order, registry, root)
 
-    typer.echo(f"\n✓ '{module_name}' et ses dépendances installés avec succès.")
+    if plan.installed_apps:
+        typer.echo("  > Appliquez les migrations : forge migrate")
+
+    typer.echo(f"\nOK : '{module_name}' et ses dépendances installés avec succès.")
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +159,7 @@ def _install_single_module(
     urls.py s'il en a un.
 
     Ne concerne que les modules qui embarquent leurs sources. Un module
-    distribué sur PyPI (`forge-auth`, `forge-log`, …) n'a qu'un `manifest.json` :
+    distribué sur PyPI (`forge-auth`, `forge-log`, ...) n'a qu'un `manifest.json` :
     il est installé par `_install_python_packages` et configuré par
     `_apply_manifest_config`, il n'y a donc rien à copier ici.
 
@@ -163,7 +170,7 @@ def _install_single_module(
     source_dir = _APPS_DIR / folder_name
 
     if not source_dir.exists():
-        typer.echo(f"  ⚠ Module '{module_name}' introuvable dans le registre — ignoré.", err=True)
+        typer.echo(f"  ! Module '{module_name}' introuvable dans le registre - ignoré.", err=True)
         return
 
     if all(entry.name == "manifest.json" for entry in source_dir.iterdir()):
@@ -171,15 +178,15 @@ def _install_single_module(
 
     dest_dir = project_root / folder_name
     if dest_dir.exists():
-        typer.echo(f"  • '{folder_name}' déjà présent — copie ignorée.")
+        typer.echo(f"  - '{folder_name}' déjà présent - copie ignorée.")
     else:
         import shutil
         shutil.copytree(source_dir, dest_dir, ignore=shutil.ignore_patterns("manifest.json"))
-        typer.echo(f"  • '{folder_name}' copié dans le projet.")
+        typer.echo(f"  - '{folder_name}' copié dans le projet.")
 
     modified = add_to_installed_apps(settings_path, folder_name)
     if modified:
-        typer.echo(f"  • '{folder_name}' ajouté à INSTALLED_APPS.")
+        typer.echo(f"  - '{folder_name}' ajouté à INSTALLED_APPS.")
 
     if (dest_dir / "urls.py").is_file():
         wired = wire_url_include(
@@ -189,22 +196,29 @@ def _install_single_module(
             namespace=folder_name,
         )
         if wired:
-            typer.echo(f"  • {folder_name}.urls branché dans le routeur principal.")
+            typer.echo(f"  - {folder_name}.urls branché dans le routeur principal.")
 
 
-def _check_python_version(min_python: tuple[int, int] | None) -> str | None:
-    """Message d'erreur si l'interpréteur courant est trop ancien, sinon `None`.
+def _check_python_version(
+    min_python: tuple[int, int] | None,
+    current: tuple[int, int] | None = None,
+) -> str | None:
+    """Message d'erreur si l'interpréteur cible est trop ancien, sinon `None`.
 
-    Le contrôle se fait avant toute écriture : sans lui, `pip` échouerait en fin
-    d'installation, après que `settings.py` ait déjà été modifié.
+    `current` est la version de l'interpréteur du projet ; à défaut, celle de
+    l'interpréteur qui exécute la CLI. Le contrôle se fait avant toute
+    écriture : sans lui, l'installation échouerait en fin de parcours, après
+    que `settings.py` ait déjà été modifié.
     """
-    if min_python is None or sys.version_info[:2] >= min_python:
+    if current is None:
+        current = (sys.version_info[0], sys.version_info[1])
+    if min_python is None or current >= min_python:
         return None
     required = ".".join(map(str, min_python))
-    current = ".".join(map(str, sys.version_info[:2]))
+    found = ".".join(map(str, current))
     return (
         f"Python {required}+ requis par cette chaîne de modules "
-        f"(interpréteur courant : {current})."
+        f"(interpréteur du projet : {found})."
     )
 
 
@@ -220,11 +234,11 @@ def _apply_manifest_config(
     """
     for app_label in plan.installed_apps:
         if add_to_installed_apps(settings_path, app_label):
-            typer.echo(f"  • '{app_label}' ajouté à INSTALLED_APPS.")
+            typer.echo(f"  - '{app_label}' ajouté à INSTALLED_APPS.")
 
     for middleware in plan.middleware:
         if add_to_list_setting(settings_path, "MIDDLEWARE", middleware):
-            typer.echo(f"  • '{middleware}' ajouté à MIDDLEWARE.")
+            typer.echo(f"  - '{middleware}' ajouté à MIDDLEWARE.")
 
     if plan.settings_to_apply:
         rendered = _render_placeholders(plan.settings_to_apply, project_name)
@@ -239,7 +253,7 @@ def _apply_manifest_config(
             namespace=url.get("namespace", include_target.split(".")[0]),
         )
         if wired:
-            typer.echo(f"  • {include_target} branché dans le routeur principal.")
+            typer.echo(f"  - {include_target} branché dans le routeur principal.")
 
 
 def _render_placeholders(value, project_name: str):
@@ -262,7 +276,7 @@ def _apply_settings(settings_to_apply: dict, settings_path: Path) -> None:
     """
     for key, value in settings_to_apply.items():
         if add_simple_setting(settings_path, key, value):
-            typer.echo(f"  • {key} = {value!r} ajouté à settings.py.")
+            typer.echo(f"  - {key} = {value!r} ajouté à settings.py.")
 
 
 def _configure_services(services: list[str], project_root: Path) -> None:
@@ -276,55 +290,29 @@ def _configure_services(services: list[str], project_root: Path) -> None:
     from forge.commands.configure import run as configure_run
 
     for service in services:
-        typer.echo(f"\n→ Configuration de '{service}'...")
+        typer.echo(f"\n> Configuration de '{service}'...")
         configure_run(service=service, options=ConfigureOptions(), project_root=project_root)
 
 
-@catch(FileNotFoundError)
-def _run_installer(cmd: list[str]) -> int:
-    """Lance un installeur et retourne son code de retour.
-
-    `Err(FileNotFoundError)` si l'exécutable n'existe pas (ex : `uv` absent).
-    """
-    return subprocess.run(cmd).returncode
+def _run_installer(cmd: list[str]) -> Result[int, FileNotFoundError]:
+    """Lance un installeur (voir `forge.core.environment.run_installer`)."""
+    return environment.run_installer(cmd)
 
 
-def _install_python_packages(packages: list[str]) -> bool:
-    """
-    Installe depuis PyPI les paquets requis par les modules installés, dans
-    l'environnement courant (celui où tourne `forge`).
+def _install_python_packages(packages: list[str], project_root: Path | None = None) -> bool:
+    """Installe depuis PyPI les paquets requis, dans l'environnement du projet."""
+    return environment.install_packages(packages, project_root)
 
-    Les spécifications viennent des manifestes (ex : `django-forge-log>=1.0.0rc3`) :
-    une borne de pré-version suffit à `uv` comme à `pip` pour autoriser cette
-    pré-version, sans ouvrir les pré-versions des dépendances transitives.
 
-    Essaie `uv pip install` en premier : c'est le gestionnaire documenté pour
-    installer django-forge-cli lui-même (`uv add django-forge-cli`), et les
-    environnements virtuels créés par uv n'embarquent PAS pip par défaut — un
-    simple `python -m pip install` y échoue avec « No module named pip ».
-    Retombe sur `pip install` pour les environnements qui en disposent.
-
-    Retourne `True` si l'installation a réussi.
-    """
-    typer.echo(f"\n→ Installation depuis PyPI : {', '.join(packages)}...")
-
-    attempts = [
-        ["uv", "pip", "install", "--python", sys.executable, *packages],
-        [sys.executable, "-m", "pip", "install", *packages],
-    ]
-
-    for cmd in attempts:
-        match _run_installer(cmd):
-            case Ok(0):
-                return True
-
-    quoted = " ".join(f'"{p}"' for p in packages)
-    typer.echo(
-        "  ⚠ Échec de l'installation d'un ou plusieurs paquets Python. "
-        f"Installez-les manuellement : uv pip install {quoted}",
-        err=True,
-    )
-    return False
+def _record_modules(order: list[str], registry: dict, project_root: Path) -> None:
+    """Enregistre dans `forge.toml` les modules installés."""
+    state = load_state(project_root)
+    state.forge_version = cli_version()
+    for name in order:
+        manifest = registry.get(name)
+        if manifest is not None:
+            state.record_module(name, manifest.version, manifest.python_packages)
+    save_state(project_root, state)
 
 
 def _ensure_env_keys(keys: list[str], project_root: Path) -> None:
@@ -345,10 +333,10 @@ def _ensure_env_keys(keys: list[str], project_root: Path) -> None:
         return
 
     with env_file.open("a", encoding="utf-8") as f:
-        f.write("\n# Ajouté automatiquement par forge install — à compléter\n")
+        f.write("\n# Ajouté automatiquement par forge install - à compléter\n")
         for key in missing:
             f.write(f"{key}=\n")
-        typer.echo(f"  • Clés ajoutées dans .env : {', '.join(missing)}")
+        typer.echo(f"  - Clés ajoutées dans .env : {', '.join(missing)}")
 
 
 # ---------------------------------------------------------------------------

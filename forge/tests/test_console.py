@@ -31,7 +31,7 @@ def test_reconfigures_non_utf8_streams(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_skips_streams_already_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
-    # "UTF-8", "utf8"… doivent tous être reconnus comme déjà bons.
+    # "UTF-8", "utf8"... doivent tous être reconnus comme déjà bons.
     out, err = _FakeStream("UTF-8"), _FakeStream("utf8")
     monkeypatch.setattr("sys.stdout", out)
     monkeypatch.setattr("sys.stderr", err)

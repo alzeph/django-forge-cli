@@ -26,6 +26,7 @@ Chaque module est une bibliothèque publiée sur PyPI : `forge install <module>`
 |---|---|---|---|
 | `forge-auth` | `django-forge-auth` | `INSTALLED_APPS` (+ `token_blacklist`), `AUTH_USER_MODEL`, `FORGE_AUTH = {}`, route `api/` ; configure aussi DRF. Installe `forge-test`. | 3.12+ |
 | `forge-test` | `django-forge-test` | aucune (helpers de test : `ForgeCase`, `ForgeModelFactory`) | 3.12+ |
+| `forge-core` | `django-forge-core` | aucune (configuration par l'environnement, modèles abstraits, erreurs typées pour `pycatch`, intégration DRF) ; installé par les blueprints `api` et `saas` | 3.12+ |
 | `forge-log` | `django-forge-log` | `INSTALLED_APPS` + `RequestContextMiddleware` (audit trail) | 3.12+ |
 | `event-bus` | `django-event-bus` | `INSTALLED_APPS` + `EVENT_BUS = {"SERVICE_NAME": <projet>}` (broker en mémoire par défaut) | **3.13+** |
 | `goroutine` | `django-goroutine` | `INSTALLED_APPS` ; installe `pycatch` | **3.13+** |
@@ -49,7 +50,7 @@ Les bibliothèques que la CLI installe sont publiées séparément :
 | [django-event-bus](https://github.com/alzeph/django-event-bus) | Bus d'événements entre services |
 | [django-goroutine](https://github.com/alzeph/django-goroutine) | Tâches concurrentes structurées |
 | [pycatch](https://github.com/alzeph/pycatch) | Gestion d'erreurs par `Result` (paquet PyPI `pycatch-safe`) |
-| [django-forge-core](https://github.com/alzeph/django-forge-core) | Socle runtime : configuration par l'environnement, modèles abstraits, erreurs typées (intégration à la CLI prévue) |
+| [django-forge-core](https://github.com/alzeph/django-forge-core) | Socle runtime : configuration par l'environnement, modèles abstraits, erreurs typées |
 
 ---
 
@@ -155,8 +156,8 @@ Blueprints fournis :
 
 | Blueprint | Contenu |
 |-----------|---------|
-| `api`  | Django REST Framework + PostgreSQL (SQLite en dev) + app `core`. |
-| `saas` | `forge-auth` (JWT) + DRF + PostgreSQL (SQLite en dev) + Celery + Redis + app `core`. |
+| `api`  | `forge-core` + Django REST Framework + PostgreSQL (SQLite en dev) + app `core`. |
+| `saas` | `forge-core` + `forge-auth` (JWT) + DRF + PostgreSQL (SQLite en dev) + Celery + Redis + app `core`. |
 
 **Ajouter son propre blueprint** - dépose un dossier `forge/templates/blueprints/<nom>/blueprint.json` :
 

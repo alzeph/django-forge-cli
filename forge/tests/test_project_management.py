@@ -783,7 +783,9 @@ class TestList:
 
         run(ListOptions(), project_dir=tmp_path)
         out = capsys.readouterr().out
-        for name in ("forge-auth", "forge-test", "forge-log", "event-bus", "goroutine", "pycatch"):
+        for name in (
+            "forge-auth", "forge-test", "forge-core", "forge-log", "event-bus", "goroutine", "pycatch"
+        ):
             assert name in out
         assert "installé" not in out.replace("disponible", "")
 

@@ -1,0 +1,10 @@
+{
+  "name": "forge-core",
+  "version": "0.1.0",
+  "dependencies": [],
+  "configure": [],
+  "python_packages": [
+    "django-forge-core>=0.1.0"
+  ],
+  "env_required": []
+}

@@ -2,7 +2,7 @@
 Tests de détail : chaque petit paramètre, valeur par défaut et branche limite.
 
 Complète test_core / test_command / test_blueprint sans les dupliquer :
-- manifestes embarqués (chaque champ de chacun des 6 modules) ;
+- manifestes embarqués (chaque champ de chacun des 7 modules) ;
 - dataclasses d'options ;
 - config_manager (idempotence, remplacement de bloc) ;
 - handlers `configure` (postgis, --dev, mysql, channels, erreurs) ;
@@ -67,6 +67,7 @@ class TestShippedManifests:
     EXPECTED = {
         "forge-auth": "forge_auth",
         "forge-test": "forge_test",
+        "forge-core": "forge_core",
         "forge-log": "forge_log",
         "event-bus": "event_bus",
         "goroutine": "goroutine",
@@ -112,6 +113,7 @@ class TestShippedManifests:
         assert versions == {
             "forge_auth": "0.2.1",
             "forge_test": "0.8.0",
+            "forge_core": "0.1.0",
             "forge_log": "1.0.0rc3",
             "event_bus": "1.0.0",
             "goroutine": "1.0.0rc2",
@@ -132,6 +134,13 @@ class TestShippedManifests:
         m = _manifest("forge_test")
         assert m["dependencies"] == [] and m["configure"] == []
         for key in ("installed_apps", "middleware", "settings", "urls"):
+            assert key not in m
+
+    def test_forge_core_fields(self) -> None:
+        m = _manifest("forge_core")
+        assert m["python_packages"] == ["django-forge-core>=0.1.0"]
+        assert m["dependencies"] == [] and m["configure"] == []
+        for key in ("installed_apps", "middleware", "settings", "urls", "requires_python"):
             assert key not in m
 
     def test_forge_log_fields(self) -> None:
@@ -1127,8 +1136,8 @@ class TestBlueprintDetails:
         from forge.commands import blueprint as bp
 
         api, saas = bp.load_blueprint("api"), bp.load_blueprint("saas")
-        assert api.install == [] and api.apps == ["core"]
-        assert saas.install == ["forge-auth"]
+        assert api.install == ["forge-core"] and api.apps == ["core"]
+        assert saas.install == ["forge-core", "forge-auth"]
         assert [s.service for s in saas.configure] == ["drf", "pgsql", "celery", "redis"]
         assert saas.configure[1].dev == "sqlite"
 

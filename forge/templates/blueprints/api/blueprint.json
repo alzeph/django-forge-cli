@@ -1,8 +1,8 @@
 {
   "name": "api",
-  "description": "API REST minimale : Django REST Framework + PostgreSQL (SQLite en dev), avec une app 'core'.",
+  "description": "API REST minimale : forge-core, Django REST Framework + PostgreSQL (SQLite en dev), avec une app 'core'.",
   "apps": ["core"],
-  "install": [],
+  "install": ["forge-core"],
   "configure": [
     { "service": "drf" },
     { "service": "pgsql", "dev": "sqlite" }

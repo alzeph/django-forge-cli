@@ -37,6 +37,22 @@ La CLI elle-même utilise `pycatch` pour retourner des `Result` plutôt que de l
 
 ---
 
+## Écosystème
+
+Les bibliothèques que la CLI installe sont publiées séparément :
+
+| Dépôt | Rôle |
+|---|---|
+| [django-forge-auth](https://github.com/alzeph/django-forge-auth) | Authentification JWT et OTP |
+| [django-forge-test](https://github.com/alzeph/django-forge-test) | Tests d'API déclaratifs et fixtures |
+| [django-forge-log](https://github.com/alzeph/django-forge-log) | Audit trail des vues, de DRF et de l'admin |
+| [django-event-bus](https://github.com/alzeph/django-event-bus) | Bus d'événements entre services |
+| [django-goroutine](https://github.com/alzeph/django-goroutine) | Tâches concurrentes structurées |
+| [pycatch](https://github.com/alzeph/pycatch) | Gestion d'erreurs par `Result` (paquet PyPI `pycatch-safe`) |
+| [django-forge-core](https://github.com/alzeph/django-forge-core) | Socle runtime : configuration par l'environnement, modèles abstraits, erreurs typées (intégration à la CLI prévue) |
+
+---
+
 ## Structure du Projet (Arborescence des fichiers)
 
 Pour garantir la maintenabilité et l'extensibilité du framework, le code source de la CLI respecte l'architecture standard suivante :

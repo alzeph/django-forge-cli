@@ -1,0 +1,16 @@
+{
+  "name": "goroutine",
+  "version": "1.0.0rc2",
+  "dependencies": [
+    "pycatch"
+  ],
+  "configure": [],
+  "requires_python": "3.13",
+  "python_packages": [
+    "django-goroutine>=1.0.0rc2"
+  ],
+  "installed_apps": [
+    "django_goroutine"
+  ],
+  "env_required": []
+}

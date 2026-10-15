@@ -18,10 +18,22 @@ Django Forge est un méta-framework construit au-dessus de Django. Il a pour obj
 
 ---
 
-## Applications natives intégrées
+## Modules disponibles
 
-- **forge-auth** : Gestion complète de l'authentification avec support natif de l'OTP (One-Time Password).
-- **forge-test** : Framework de test piloté par les données. Permet de générer des scénarios de test complets à partir de structures de dictionnaires Python en héritant de la classe `ForgeCase`. _Ce module est requis et installé automatiquement dès le premier appel à `forge install`._
+Chaque module est une bibliothèque publiée sur PyPI : `forge install <module>` l'installe depuis PyPI puis applique la **configuration minimale** dans `settings.py` / `urls.py` (aucun code n'est copié dans votre projet).
+
+| Module | Paquet PyPI | Configuration appliquée | Python |
+|---|---|---|---|
+| `forge-auth` | `django-forge-auth` | `INSTALLED_APPS` (+ `token_blacklist`), `AUTH_USER_MODEL`, `FORGE_AUTH = {}`, route `api/` ; configure aussi DRF. Installe `forge-test`. | 3.12+ |
+| `forge-test` | `django-forge-test` | aucune (helpers de test : `ForgeCase`, `ForgeModelFactory`) | 3.12+ |
+| `forge-log` | `django-forge-log` | `INSTALLED_APPS` + `RequestContextMiddleware` (audit trail) | 3.12+ |
+| `event-bus` | `django-event-bus` | `INSTALLED_APPS` + `EVENT_BUS = {"SERVICE_NAME": <projet>}` (broker en mémoire par défaut) | **3.13+** |
+| `goroutine` | `django-goroutine` | `INSTALLED_APPS` ; installe `pycatch` | **3.13+** |
+| `pycatch` | `pycatch-safe` | aucune (gestion d'erreurs `Result` : `Ok` / `Err` / `@catch`) | 3.12+ |
+
+Les versions sont des bornes minimales (`>=`) ; une borne de pré-version (`rc`) autorise cette pré-version. Si l'interpréteur est trop ancien pour la chaîne demandée, `forge install` s'arrête **avant** de modifier le projet.
+
+La CLI elle-même utilise `pycatch` pour retourner des `Result` plutôt que de lever des exceptions (résolution de dépendances, lancement de `pip`/`uv`, passe-plat Django).
 
 ---
 
@@ -52,12 +64,13 @@ django-forge-cli/
 │   │   ├── __init__.py
 │   │   ├── project_base/          # Squelette de projet initial pour 'forge init'
 │   │   └── apps/                  # Applications réutilisables et manifestes associés
-│   │       ├── forge_auth/
-│   │       │   ├── manifest.json  # Configuration et dépendances de l'application
-│   │       │   └── [source_code]  # Fichiers Python standards de l'application
-│   │       └── forge_test/
-│   │           ├── manifest.json
-│   │           └── [source_code]
+│   │       ├── forge_auth/        # Un dossier par module ; manifest.json uniquement
+│   │       │   └── manifest.json  # Paquet PyPI, config minimale, dépendances
+│   │       ├── forge_test/
+│   │       ├── forge_log/
+│   │       ├── event_bus/
+│   │       ├── goroutine/
+│   │       └── pycatch/
 │   │
 │   ├── others/
 │   │   └── settings_test.py       # Settings Django minimal pour la suite pytest
@@ -249,7 +262,7 @@ Chaque application présente dans `forge/templates/apps/` doit impérativement p
 
 #### Structure du fichier `manifest.json` :
 
-> ℹ️ L'exemple ci-dessous (`forge-notification`) est **illustratif** pour montrer la structure d'un manifeste avec dépendances et configuration. Ce module n'est pas fourni en standard : les modules livrés sont `forge-auth` et `forge-test`.
+> ℹ️ L'exemple ci-dessous (`forge-notification`) est **illustratif** pour montrer la structure d'un manifeste. Ce module n'est pas fourni en standard : voir la table « Modules disponibles » pour les modules livrés.
 
 ```json
 {
@@ -258,16 +271,33 @@ Chaque application présente dans `forge/templates/apps/` doit impérativement p
   "dependencies": ["forge-auth"],
   "configure": ["redis"],
   "env_required": ["NOTIFICATION_API_KEY"],
-  "python_packages": ["twilio"]
+  "requires_python": "3.13",
+  "python_packages": ["django-forge-notification>=1.0.0"],
+  "installed_apps": ["forge_notification"],
+  "middleware": ["forge_notification.middleware.NotificationMiddleware"],
+  "settings": {"NOTIFICATION": {"SERVICE_NAME": "{project_name}"}},
+  "urls": {"prefix": "api/", "include": "forge_notification.urls"}
 }
 ```
+
+| Clé | Rôle |
+|---|---|
+| `dependencies` | Autres modules Forge à installer d'abord |
+| `configure` | Services à configurer (`forge configure <service>`) |
+| `env_required` | Clés ajoutées (vides) dans `.env` si absentes |
+| `python_packages` | Spécifications PyPI à installer |
+| `installed_apps` / `middleware` | Ajoutés à `INSTALLED_APPS` / `MIDDLEWARE` |
+| `settings` | Réglages posés dans `settings.py` s'ils sont absents (`{project_name}` est substitué) |
+| `urls` | `include` branché dans le `urls.py` principal |
+| `requires_python` | Version minimale de Python (`"3.13"`) |
 
 #### Cycle de traitement du manifeste lors d'un `forge install` :
 
 1. **Résolution des dépendances** : La CLI lit le tableau `"dependencies"`. Si une dépendance n'est pas installée, elle suspend l'installation en cours pour exécuter récursivement l'installation de la dépendance (dans l'exemple ci-dessus, `forge-auth` sera traité en premier, ce qui déploiera également `forge-test`).
 2. **Exécution des configurations** : Le tableau `"configure"` appelle automatiquement les scripts du moteur de configuration associés (ici, l'équivalent de `forge configure redis`).
 3. **Contrôle de l'environnement** : Les clés listées dans `"env_required"` sont vérifiées ou ajoutées comme structures vides dans le fichier `.env` du projet hôte pour alerter le développeur.
-4. **Installation des paquets Python** : Les paquets listés dans `"python_packages"` sont installés dans l'environnement courant (celui où tourne `forge`) via `pip install`, en plus des dépendances de `django-forge-cli` lui-même. Utile pour un module dont le code source importe un paquet tiers (ex : `pyotp` pour `forge-auth`).
+4. **Configuration minimale** : `"installed_apps"`, `"middleware"`, `"settings"` et `"urls"` sont appliqués de façon idempotente à `settings.py` et au `urls.py` principal.
+5. **Installation des paquets Python** : Les spécifications listées dans `"python_packages"` sont installées depuis PyPI dans l'environnement courant (celui où tourne `forge`) via `uv pip install` (repli : `pip install`). Si `"requires_python"` n'est pas satisfait, l'installation s'arrête avant toute modification.
 
 ```
 

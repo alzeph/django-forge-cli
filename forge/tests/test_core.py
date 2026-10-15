@@ -339,6 +339,53 @@ class TestManifest:
         assert m.settings == {"AUTH_USER_MODEL": "forge_auth.User"}
 
 
+class TestManifestPypiFields:
+    def test_defaults(self) -> None:
+        m = Manifest.from_dict({"name": "x"})
+        assert m.installed_apps == [] and m.middleware == []
+        assert m.urls is None and m.requires_python == ""
+
+    def test_resolve_safe_returns_err_for_unknown_module(self) -> None:
+        from pycatch import Err, Ok
+
+        from forge.core.dependency_resolver import resolve_safe
+
+        assert isinstance(resolve_safe("ghost", {}), Err)
+        assert isinstance(resolve_safe("a", {"a": Manifest(name="a")}), Ok)
+
+    def test_resolve_safe_returns_err_on_cycle(self) -> None:
+        from pycatch import Err
+
+        from forge.core.dependency_resolver import resolve_safe
+
+        registry = {
+            "a": Manifest(name="a", dependencies=["b"]),
+            "b": Manifest(name="b", dependencies=["a"]),
+        }
+        result = resolve_safe("a", registry)
+        assert isinstance(result, Err) and isinstance(result.error, ValueError)
+
+    def test_plan_aggregates_config_and_highest_python(self) -> None:
+        registry = {
+            "a": Manifest(name="a", requires_python="3.12", installed_apps=["app_a"]),
+            "b": Manifest(
+                name="b",
+                dependencies=["a"],
+                requires_python="3.13",
+                installed_apps=["app_a", "app_b"],
+                middleware=["mw.B"],
+                settings={"K": 1},
+                urls={"prefix": "", "include": "b.urls"},
+            ),
+        }
+        plan = resolve("b", registry)
+        assert plan.installed_apps == ["app_a", "app_b"]
+        assert plan.middleware == ["mw.B"]
+        assert plan.settings_to_apply == {"K": 1}
+        assert plan.urls_to_wire == [{"prefix": "", "include": "b.urls"}]
+        assert plan.min_python == (3, 13)
+
+
 # ===========================================================================
 # dependency_resolver — resolve
 # ===========================================================================

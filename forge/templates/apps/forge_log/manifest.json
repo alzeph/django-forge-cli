@@ -1,0 +1,16 @@
+{
+  "name": "forge-log",
+  "version": "1.0.0rc3",
+  "dependencies": [],
+  "configure": [],
+  "python_packages": [
+    "django-forge-log>=1.0.0rc3"
+  ],
+  "installed_apps": [
+    "forge_log"
+  ],
+  "middleware": [
+    "forge_log.middleware.RequestContextMiddleware"
+  ],
+  "env_required": []
+}

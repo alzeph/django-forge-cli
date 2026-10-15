@@ -12,6 +12,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from pycatch import Err, Ok, catch
+
 
 # ---------------------------------------------------------------------------
 # Localisation
@@ -56,10 +58,11 @@ def find_main_urls(project_root: Path) -> Path | None:
     module installé comme forge_auth — l'app/le module finirait par s'inclure
     lui-même, provoquant une boucle d'inclusion infinie au chargement des URLs.
     """
-    try:
-        settings_path = _find_settings(project_root)
-    except FileNotFoundError:
-        return None
+    match catch(FileNotFoundError)(_find_settings)(project_root):
+        case Ok(settings_path):
+            pass
+        case Err(_):
+            return None
 
     module_path = _root_urlconf(settings_path)
     if module_path is None:

@@ -1,17 +1,29 @@
 {
   "name": "forge-auth",
-  "version": "1.0.0",
+  "version": "0.2.1",
   "dependencies": [
     "forge-test"
   ],
   "configure": [
     "drf"
   ],
+  "python_packages": [
+    "django-forge-auth>=0.2.1"
+  ],
+  "installed_apps": [
+    "rest_framework_simplejwt.token_blacklist",
+    "forge_auth"
+  ],
+  "settings": {
+    "AUTH_USER_MODEL": "forge_auth.User",
+    "FORGE_AUTH": {}
+  },
+  "urls": {
+    "prefix": "api/",
+    "include": "forge_auth.urls"
+  },
   "env_required": [
     "SECRET_KEY",
     "JWT_SIGNING_KEY"
-  ],
-  "python_packages": [
-    "pyotp"
   ]
 }

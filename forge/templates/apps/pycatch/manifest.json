@@ -1,0 +1,11 @@
+{
+  "name": "pycatch",
+  "version": "1.0.0rc1",
+  "dependencies": [],
+  "configure": [],
+  "requires_python": "3.12",
+  "python_packages": [
+    "pycatch-safe>=1.0.0rc1"
+  ],
+  "env_required": []
+}

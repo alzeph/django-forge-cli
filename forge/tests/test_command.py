@@ -790,7 +790,8 @@ class TestInstallSingleModule:
         main_urls = (project_tree / "myproject" / "urls.py").read_text()
         assert "include(" not in main_urls
 
-    def test_sets_auth_user_model_for_forge_auth(self, project_tree: Path) -> None:
+    def test_pypi_module_without_sources_copies_nothing(self, project_tree: Path) -> None:
+        """Un module PyPI n'a qu'un manifest.json : rien à copier ni à brancher."""
         from forge.commands.install import _install_single_module
 
         self._fake_module(project_tree, "forge_auth", has_urls=False)
@@ -799,20 +800,185 @@ class TestInstallSingleModule:
             settings_path = project_tree / "myproject" / "settings.py"
             _install_single_module("forge-auth", project_tree, settings_path)
 
-        content = settings_path.read_text()
-        assert "AUTH_USER_MODEL" in content
-        assert "forge_auth.User" in content
+        assert not (project_tree / "forge_auth").exists()
+        assert "forge_auth" not in settings_path.read_text()
 
-    def test_does_not_set_auth_user_model_for_other_modules(self, project_tree: Path) -> None:
-        from forge.commands.install import _install_single_module
 
-        self._fake_module(project_tree, "forge_test", has_urls=False)
+# ===========================================================================
+# install — modules distribués sur PyPI (manifestes réels)
+# ===========================================================================
 
-        with patch("forge.commands.install._APPS_DIR", project_tree / "_fake_apps"):
-            settings_path = project_tree / "myproject" / "settings.py"
-            _install_single_module("forge-test", project_tree, settings_path)
 
-        assert "AUTH_USER_MODEL" not in settings_path.read_text()
+class TestPypiModules:
+    @staticmethod
+    def _plan(module: str):
+        from forge.commands.install import _APPS_DIR
+        from forge.core.dependency_resolver import build_registry, resolve
+
+        return resolve(module, build_registry(_APPS_DIR))
+
+    @pytest.mark.parametrize(
+        ("module", "package"),
+        [
+            ("forge-auth", "django-forge-auth"),
+            ("forge-test", "django-forge-test"),
+            ("forge-log", "django-forge-log"),
+            ("event-bus", "django-event-bus"),
+            ("goroutine", "django-goroutine"),
+            ("pycatch", "pycatch-safe"),
+        ],
+    )
+    def test_module_installs_from_pypi(self, module: str, package: str) -> None:
+        plan = self._plan(module)
+        assert any(spec.startswith(package + ">=") for spec in plan.python_packages)
+
+    def test_no_embedded_sources_left(self) -> None:
+        from forge.commands.install import _APPS_DIR
+
+        for module_dir in _APPS_DIR.iterdir():
+            if module_dir.is_dir() and module_dir.name != "__pycache__":
+                files = {f.name for f in module_dir.iterdir() if f.name != "__pycache__"}
+                assert files == {"manifest.json"}, module_dir.name
+
+    def test_forge_auth_minimum_config(self) -> None:
+        plan = self._plan("forge-auth")
+        assert plan.order == ["forge-test", "forge-auth"]
+        assert "forge_auth" in plan.installed_apps
+        assert "rest_framework_simplejwt.token_blacklist" in plan.installed_apps
+        assert plan.settings_to_apply["AUTH_USER_MODEL"] == "forge_auth.User"
+        assert plan.urls_to_wire == [{"prefix": "api/", "include": "forge_auth.urls"}]
+        assert "drf" in plan.services_to_configure
+
+    def test_forge_log_minimum_config(self) -> None:
+        plan = self._plan("forge-log")
+        assert plan.installed_apps == ["forge_log"]
+        assert plan.middleware == ["forge_log.middleware.RequestContextMiddleware"]
+
+    def test_goroutine_pulls_pycatch_first_and_needs_python_313(self) -> None:
+        plan = self._plan("goroutine")
+        assert plan.order == ["pycatch", "goroutine"]
+        assert plan.min_python == (3, 13)
+        assert "django_goroutine" in plan.installed_apps
+
+    def test_event_bus_needs_python_313(self) -> None:
+        assert self._plan("event-bus").min_python == (3, 13)
+
+
+class TestApplyManifestConfig:
+    def _settings(self, tmp_path: Path) -> Path:
+        s = tmp_path / "settings.py"
+        s.write_text(
+            'INSTALLED_APPS = [\n    "django.contrib.admin",\n]\n'
+            'MIDDLEWARE = [\n    "django.middleware.security.SecurityMiddleware",\n]\n',
+            encoding="utf-8",
+        )
+        return s
+
+    def test_applies_apps_middleware_and_settings(self, tmp_path: Path) -> None:
+        from forge.commands.install import _apply_manifest_config
+        from forge.core.dependency_resolver import InstallPlan
+
+        s = self._settings(tmp_path)
+        plan = InstallPlan(
+            installed_apps=["forge_log"],
+            middleware=["forge_log.middleware.RequestContextMiddleware"],
+            settings_to_apply={"EVENT_BUS": {"SERVICE_NAME": "{project_name}"}},
+        )
+
+        _apply_manifest_config(plan, tmp_path, s, project_name="shop")
+
+        content = s.read_text()
+        assert '"forge_log"' in content
+        assert "forge_log.middleware.RequestContextMiddleware" in content
+        assert "'SERVICE_NAME': 'shop'" in content
+
+    def test_is_idempotent(self, tmp_path: Path) -> None:
+        from forge.commands.install import _apply_manifest_config
+        from forge.core.dependency_resolver import InstallPlan
+
+        s = self._settings(tmp_path)
+        plan = InstallPlan(installed_apps=["forge_log"], settings_to_apply={"FORGE_AUTH": {}})
+
+        _apply_manifest_config(plan, tmp_path, s, project_name="shop")
+        first = s.read_text()
+        _apply_manifest_config(plan, tmp_path, s, project_name="shop")
+
+        assert s.read_text() == first
+
+    def test_wires_urls(self, project_tree: Path) -> None:
+        from forge.commands.install import _apply_manifest_config
+        from forge.core.dependency_resolver import InstallPlan
+
+        plan = InstallPlan(urls_to_wire=[{"prefix": "api/", "include": "forge_auth.urls"}])
+        settings_path = project_tree / "myproject" / "settings.py"
+
+        _apply_manifest_config(plan, project_tree, settings_path, project_name="myproject")
+
+        urls = (project_tree / "myproject" / "urls.py").read_text()
+        assert 'path("api/", include("forge_auth.urls", namespace="forge_auth"))' in urls
+
+
+class TestPythonVersionCheck:
+    def test_none_means_no_constraint(self) -> None:
+        from forge.commands.install import _check_python_version
+
+        assert _check_python_version(None) is None
+
+    def test_old_interpreter_is_rejected(self) -> None:
+        from forge.commands.install import _check_python_version
+
+        message = _check_python_version((99, 0))
+        assert message is not None and "99.0" in message
+
+    def test_current_interpreter_is_accepted(self) -> None:
+        import sys
+
+        from forge.commands.install import _check_python_version
+
+        assert _check_python_version(sys.version_info[:2]) is None
+
+    def test_run_aborts_before_writing_when_python_too_old(self, project_tree: Path) -> None:
+        from forge.commands.install import run
+        from forge.core.dependency_resolver import Manifest
+
+        registry = {"goroutine": Manifest(name="goroutine", requires_python="99.0")}
+        settings = project_tree / "myproject" / "settings.py"
+        original = settings.read_text()
+
+        with (
+            patch("forge.commands.install.build_registry", return_value=registry),
+            patch("forge.commands.install._install_python_packages") as pip,
+            pytest.raises(typer.Exit) as exc_info,
+        ):
+            run(
+                module_name="goroutine",
+                options=InstallOptions(),
+                project_dir=project_tree,
+                project_name="myproject",
+            )
+
+        assert exc_info.value.exit_code == 1
+        pip.assert_not_called()
+        assert settings.read_text() == original
+
+    def test_run_exits_cleanly_on_unknown_dependency(self, project_tree: Path) -> None:
+        from forge.commands.install import run
+        from forge.core.dependency_resolver import Manifest
+
+        registry = {"a": Manifest(name="a", dependencies=["ghost"])}
+
+        with (
+            patch("forge.commands.install.build_registry", return_value=registry),
+            pytest.raises(typer.Exit) as exc_info,
+        ):
+            run(
+                module_name="a",
+                options=InstallOptions(),
+                project_dir=project_tree,
+                project_name="myproject",
+            )
+
+        assert exc_info.value.exit_code == 1
 
 
 # ===========================================================================

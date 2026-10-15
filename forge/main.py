@@ -19,6 +19,7 @@ import sys
 from typing import Optional
 
 import typer
+from pycatch import Err, Ok, catch
 
 from forge.commands._options import (
     AddOptions,
@@ -238,11 +239,12 @@ def main() -> None:
     # Passe-plat : commande inconnue de Forge → Django natif.
     from forge.core.engine import run_django_command
 
-    try:
-        raise SystemExit(run_django_command(argv))
-    except FileNotFoundError as exc:
-        typer.echo(f"✗ {exc}", err=True)
-        raise SystemExit(1)
+    match catch(FileNotFoundError)(run_django_command)(argv):
+        case Ok(code):
+            raise SystemExit(code)
+        case Err(error):
+            typer.echo(f"✗ {error}", err=True)
+            raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------

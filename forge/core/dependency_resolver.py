@@ -1,12 +1,21 @@
 """
 Résolution récursive des dépendances de modules Forge.
 
-Chaque module embarqué dans `forge/templates/apps/` possède un
-`manifest.json` qui déclare :
+Chaque module déclaré dans `forge/templates/apps/` possède un
+`manifest.json` qui décrit comment l'intégrer à un projet. Les modules sont
+installés depuis PyPI (`python_packages`) ; le manifeste dit ensuite ce qu'il
+faut régler dans le projet pour qu'ils fonctionnent (config minimale) :
 
-- `dependencies` : liste d'autres modules Forge requis.
-- `configure`    : liste de services à configurer (redis, celery, …).
-- `env_required` : clés d'environnement à garantir dans `.env`.
+- `dependencies`    : liste d'autres modules Forge requis.
+- `configure`       : liste de services à configurer (redis, celery, …).
+- `env_required`    : clés d'environnement à garantir dans `.env`.
+- `python_packages` : spécifications PyPI à installer (ex : `django-forge-auth>=0.2.1`).
+- `installed_apps`  : apps à ajouter à `INSTALLED_APPS`.
+- `middleware`      : classes à ajouter à `MIDDLEWARE`.
+- `settings`        : réglages simples à poser dans `settings.py`
+  (`{project_name}` est substitué par le nom du projet).
+- `urls`            : `{"prefix": ..., "include": ...}` à brancher dans `urls.py`.
+- `requires_python` : version minimale de Python (ex : `"3.13"`).
 
 Cet algorithme implémente un tri topologique **DFS avec détection de cycles**,
 ce qui garantit que :
@@ -20,6 +29,7 @@ ce qui garantit que :
 Public API
 ----------
     resolve(module_name, registry) -> InstallPlan
+    resolve_safe(module_name, registry) -> Result[InstallPlan, KeyError | ValueError]
     load_manifest(module_name, apps_dir) -> Manifest
     Manifest          (dataclass)
     InstallPlan       (dataclass)
@@ -30,7 +40,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+
+from pycatch import catch
 
 
 # ---------------------------------------------------------------------------
@@ -56,9 +67,21 @@ class Manifest:
     env_required:
         Clés d'environnement à vérifier / insérer dans `.env`.
     python_packages:
-        Paquets PyPI requis par le code source du module (ex : `["pyotp"]`)
-        mais absents des dépendances de `django-forge-cli` lui-même. Installés
-        dans l'environnement courant lors de `forge install`.
+        Spécifications PyPI à installer lors de `forge install` (ex :
+        `["django-forge-auth>=0.2.1"]`). Une borne de pré-version (`rc`) dans
+        la spécification suffit à autoriser cette pré-version.
+    installed_apps:
+        Apps à ajouter à `INSTALLED_APPS` du projet hôte.
+    middleware:
+        Classes à ajouter à `MIDDLEWARE` du projet hôte.
+    settings:
+        Réglages à poser dans `settings.py` s'ils sont absents. Les chaînes
+        peuvent contenir `{project_name}`.
+    urls:
+        Branchement dans le `urls.py` principal :
+        `{"prefix": "api/", "include": "forge_auth.urls"}`. `None` si absent.
+    requires_python:
+        Version minimale de Python, au format `"3.13"`. Vide = pas de contrainte.
     """
 
     name: str
@@ -67,6 +90,11 @@ class Manifest:
     configure: list[str] = field(default_factory=list)
     env_required: list[str] = field(default_factory=list)
     python_packages: list[str] = field(default_factory=list)
+    installed_apps: list[str] = field(default_factory=list)
+    middleware: list[str] = field(default_factory=list)
+    settings: dict = field(default_factory=dict)
+    urls: dict | None = None
+    requires_python: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "Manifest":
@@ -77,6 +105,11 @@ class Manifest:
             configure=data.get("configure", []),
             env_required=data.get("env_required", []),
             python_packages=data.get("python_packages", []),
+            installed_apps=data.get("installed_apps", []),
+            middleware=data.get("middleware", []),
+            settings=data.get("settings", {}),
+            urls=data.get("urls"),
+            requires_python=data.get("requires_python", ""),
         )
 
     @classmethod
@@ -102,12 +135,35 @@ class InstallPlan:
     python_packages:
         Union dédupliquée de tous les paquets PyPI requis par la chaîne de
         modules, dans l'ordre d'apparition.
+    installed_apps / middleware:
+        Unions dédupliquées, dans l'ordre d'installation des modules.
+    settings_to_apply:
+        Fusion des `settings` de tous les manifestes (le premier module à
+        déclarer une clé l'emporte).
+    urls_to_wire:
+        Branchements `urls.py` de la chaîne de modules, dans l'ordre.
+    min_python:
+        Version minimale de Python exigée par la chaîne, ex : `(3, 13)`.
+        `None` si aucun module n'impose de contrainte.
     """
 
     order: list[str] = field(default_factory=list)
     services_to_configure: list[str] = field(default_factory=list)
     env_keys: list[str] = field(default_factory=list)
     python_packages: list[str] = field(default_factory=list)
+    installed_apps: list[str] = field(default_factory=list)
+    middleware: list[str] = field(default_factory=list)
+    settings_to_apply: dict = field(default_factory=dict)
+    urls_to_wire: list[dict] = field(default_factory=list)
+    min_python: tuple[int, int] | None = None
+
+
+def _parse_version(version: str) -> tuple[int, int] | None:
+    """`"3.13"` → `(3, 13)` ; chaîne vide → `None`."""
+    if not version:
+        return None
+    major, _, minor = version.partition(".")
+    return int(major), int(minor or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +225,11 @@ class _Resolver:
         self._services: list[str] = []
         self._env_keys: list[str] = []
         self._python_packages: list[str] = []
+        self._installed_apps: list[str] = []
+        self._middleware: list[str] = []
+        self._settings: dict = {}
+        self._urls: list[dict] = []
+        self._min_python: tuple[int, int] | None = None
 
     def _visit(self, name: str, stack: list[str]) -> None:
         state = self._state.get(name)
@@ -208,6 +269,24 @@ class _Resolver:
             if pkg not in self._python_packages:
                 self._python_packages.append(pkg)
 
+        for app in manifest.installed_apps:
+            if app not in self._installed_apps:
+                self._installed_apps.append(app)
+
+        for mw in manifest.middleware:
+            if mw not in self._middleware:
+                self._middleware.append(mw)
+
+        for key, value in manifest.settings.items():
+            self._settings.setdefault(key, value)
+
+        if manifest.urls and manifest.urls not in self._urls:
+            self._urls.append(manifest.urls)
+
+        required = _parse_version(manifest.requires_python)
+        if required and (self._min_python is None or required > self._min_python):
+            self._min_python = required
+
         self._state[name] = "visited"
 
     def run(self, root: str) -> InstallPlan:
@@ -217,6 +296,11 @@ class _Resolver:
             services_to_configure=self._services,
             env_keys=self._env_keys,
             python_packages=self._python_packages,
+            installed_apps=self._installed_apps,
+            middleware=self._middleware,
+            settings_to_apply=self._settings,
+            urls_to_wire=self._urls,
+            min_python=self._min_python,
         )
 
 
@@ -263,6 +347,11 @@ def resolve(module_name: str, registry: dict[str, Manifest]) -> InstallPlan:
         InstallPlan(order=["forge-test", "forge-auth", "forge-notification"], ...)
     """
     return _Resolver(registry).run(module_name)
+
+
+#: Variante de :func:`resolve` qui retourne un `Result` au lieu de lever :
+#: `Ok(InstallPlan)`, ou `Err(KeyError | ValueError)` (module inconnu / cycle).
+resolve_safe = catch(KeyError, ValueError)(resolve)
 
 
 def build_registry(apps_dir: Path) -> dict[str, Manifest]:

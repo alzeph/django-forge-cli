@@ -1,7 +1,10 @@
 {
   "name": "forge-test",
-  "version": "1.0.0",
+  "version": "0.8.0",
   "dependencies": [],
   "configure": [],
+  "python_packages": [
+    "django-forge-test>=0.8.0"
+  ],
   "env_required": []
 }

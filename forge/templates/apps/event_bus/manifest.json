@@ -1,0 +1,19 @@
+{
+  "name": "event-bus",
+  "version": "1.0.0",
+  "dependencies": [],
+  "configure": [],
+  "requires_python": "3.13",
+  "python_packages": [
+    "django-event-bus>=1.0.0"
+  ],
+  "installed_apps": [
+    "django_event_bus"
+  ],
+  "settings": {
+    "EVENT_BUS": {
+      "SERVICE_NAME": "{project_name}"
+    }
+  },
+  "env_required": []
+}
